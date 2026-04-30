@@ -12,10 +12,12 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { HealthModule } from './health/health.module';
 import { MapModule } from './map/map.module';
 import { StorageModule } from './storage/storage.module';
+import { DatabaseModule } from './database/database.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
+    DatabaseModule,
     AuthModule,
     DonorAuthModule,
     UserAuthModule,

@@ -1,0 +1,10 @@
+node_modules
+dist
+tsconfig.build.tsbuildinfo
+coverage
+.git
+.gitignore
+pgdata
+npm-debug.log
+Dockerfile
+README.md

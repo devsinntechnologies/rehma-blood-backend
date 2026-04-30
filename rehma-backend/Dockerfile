@@ -15,6 +15,10 @@ RUN npm rebuild
 
 COPY . .
 
+# Remove any copied build cache/output so the container build emits a fresh
+# production bundle every time.
+RUN rm -rf dist tsconfig.build.tsbuildinfo
+
 # Build the production artifact during image build so runtime doesn't depend
 # on a host bind-mount for `dist`.
 RUN npm run build

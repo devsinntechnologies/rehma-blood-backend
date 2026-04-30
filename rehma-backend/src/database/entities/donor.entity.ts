@@ -8,11 +8,11 @@ export class Donor {
   @Column()
   fullName!: string;
 
-  @Column({ unique: true, nullable: true })
-  email?: string | null;
+  @Column({ type: 'varchar', unique: true, nullable: true })
+  email?: string;
 
-  @Column({ nullable: true })
-  bloodGroup?: string | null;
+  @Column({ type: 'varchar', nullable: true })
+  bloodGroup?: string;
 
   @Column({ default: true })
   isActive!: boolean;

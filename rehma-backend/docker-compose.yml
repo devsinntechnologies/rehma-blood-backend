@@ -3,14 +3,18 @@ services:
     image: postgres:15
     container_name: rehma_blood
     restart: always
+
     environment:
       POSTGRES_USER: ${DATABASE_USER}
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
       POSTGRES_DB: ${DATABASE_NAME}
+
     ports:
-      - "127.0.0.1:5435:5432"  # ⚠️ LOCALHOST ONLY - NOT EXPOSED TO INTERNET
+      - "127.0.0.1:5435:5432"
+
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER} -d ${DATABASE_NAME} || exit 1"]
       interval: 10s
@@ -22,11 +26,15 @@ services:
     image: redis:7-alpine
     container_name: rehma_redis
     restart: always
+
     ports:
-      - "127.0.0.1:6380:6379"  # ⚠️ LOCALHOST ONLY - NOT EXPOSED TO INTERNET
+      - "127.0.0.1:6380:6379"
+
     volumes:
       - redis_data:/data
+
     command: redis-server --appendonly yes
+
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -34,135 +42,76 @@ services:
       retries: 5
       start_period: 5s
 
-      app:
-  build:
-    context: .
-    dockerfile: Dockerfile
-  container_name: rehma_app
-  restart: always
-  environment:
-    PORT: 3000
-    DATABASE_HOST: db
-    DATABASE_PORT: 5432
-    DATABASE_USER: ${DATABASE_USER}
-    DATABASE_PASSWORD: ${DATABASE_PASSWORD}
-    DATABASE_NAME: ${DATABASE_NAME}
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
 
-    JWT_SECRET: ${JWT_SECRET}
-    JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
+    container_name: rehma_app
+    restart: always
 
-    APP_NAME: ${APP_NAME}
+    environment:
+      PORT: 3000
+      DATABASE_HOST: db
+      DATABASE_PORT: 5432
+      DATABASE_USER: ${DATABASE_USER}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      DATABASE_NAME: ${DATABASE_NAME}
 
-    SMTP_HOST: ${SMTP_HOST}
-    SMTP_PORT: ${SMTP_PORT}
-    SMTP_USER: ${SMTP_USER}
-    SMTP_PASS: ${SMTP_PASS}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
 
-    REDIS_HOST: redis
-    REDIS_PORT: 6379
+      APP_NAME: ${APP_NAME}
 
-    CHOKIDAR_USEPOLLING: "true"
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
 
-  depends_on:
-    db:
-      condition: service_healthy
-    redis:
-      condition: service_healthy
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
 
-  ports:
-    - "7676:3000"
+      CHOKIDAR_USEPOLLING: "true"
 
-  volumes:
-    - .:/app
-    - /app/node_modules
-    - /app/dist
+    depends_on:
+      db:
+        condition: service_healthy
 
-  command: npm run start:dev
+      redis:
+        condition: service_healthy
 
-  healthcheck:
-    test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
-    interval: 30s
-    timeout: 10s
-    retries: 10
-    start_period: 120s
+    ports:
+      - "7676:3000"
+
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/dist
+
+    command: npm run start:dev
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
 
   pgadmin:
     image: dpage/pgadmin4
     container_name: rehma_pgadmin
     restart: always
+
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@admin.com
       PGADMIN_DEFAULT_PASSWORD: pgadmin4
+
     ports:
       - "5052:80"
+
     depends_on:
       - db
-  # cloudflare-tunnel:
-  #   image: cloudflare/cloudflared:latest
-  #   container_name: rehma_tunnel
-  #   restart: unless-stopped
-  #   network_mode: host
-  #   depends_on:
-  #     app:
-  #       condition: service_healthy
-  #   command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
-
-
-  # app:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   container_name: rehma_app
-  #   restart: always
-  #   environment:
-  #     PORT: 3000
-  #     DATABASE_HOST: db
-  #     DATABASE_PORT: 5432
-  #     DATABASE_USER: ${DATABASE_USER}
-  #     DATABASE_PASSWORD: ${DATABASE_PASSWORD}
-  #     DATABASE_NAME: ${DATABASE_NAME}
-  #     JWT_SECRET: ${JWT_SECRET}
-  #     JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
-  #     APP_NAME: ${APP_NAME}
-  #     SMTP_HOST: ${SMTP_HOST}
-  #     SMTP_PORT: ${SMTP_PORT}
-  #     SMTP_USER: ${SMTP_USER}
-  #     SMTP_PASS: ${SMTP_PASS}
-  #     # Redis
-  #     REDIS_HOST: redis
-  #     REDIS_PORT: 6379
-  #     REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-  #     REDIS_DB: ${REDIS_DB:-0}
-  #     # Per-endpoint rate limiting
-  #     RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
-  #     RATE_LIMIT_MAX_ATTEMPTS: ${RATE_LIMIT_MAX_ATTEMPTS:-5}
-  #     RATE_LIMIT_BLOCK_DURATION_SECONDS: ${RATE_LIMIT_BLOCK_DURATION_SECONDS:-300}
-  #     RATE_LIMIT_TRUST_PROXY: ${RATE_LIMIT_TRUST_PROXY:-true}
-  #     RATE_LIMIT_WHITELIST_IPS: ${RATE_LIMIT_WHITELIST_IPS:-}
-  #     # Global rate limiting (all routes)
-  #     GLOBAL_RATE_LIMIT_WINDOW_SECONDS: ${GLOBAL_RATE_LIMIT_WINDOW_SECONDS:-60}
-  #     GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: ${GLOBAL_RATE_LIMIT_MAX_ATTEMPTS:-50}
-  #     GLOBAL_RATE_LIMIT_BLOCK_SECONDS: ${GLOBAL_RATE_LIMIT_BLOCK_SECONDS:-300}
-  #   depends_on:
-  #     db:
-  #       condition: service_healthy
-  #     redis:
-  #       condition: service_healthy
-  #   ports:
-  #     - "7676:3000"
-  #   volumes:
-  #     - .:/app
-  #     - /app/node_modules
-  #   command: npm run start:dev
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 10
-  #     start_period: 120s
-
 
 volumes:
   postgres_data:
   redis_data:
-

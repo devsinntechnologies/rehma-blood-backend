@@ -8,12 +8,11 @@ services:
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
       POSTGRES_DB: ${DATABASE_NAME}
     ports:
-      - "127.0.0.1:5435:5435"  # ⚠️ LOCALHOST ONLY - NOT EXPOSED TO INTERNET
+      - "127.0.0.1:5435:5432"  # ⚠️ LOCALHOST ONLY - NOT EXPOSED TO INTERNET
     volumes:
       - ./pgdata:/var/lib/postgresql/data
-    command: -p 5435
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -p 5435 -U ${DATABASE_USER} -d ${DATABASE_NAME} || exit 1"]
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER} -d ${DATABASE_NAME} || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -44,7 +43,7 @@ services:
     environment:
       PORT: 3000
       DATABASE_HOST: db
-      DATABASE_PORT: 5435
+      DATABASE_PORT: 5432
       DATABASE_USER: ${DATABASE_USER}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
       DATABASE_NAME: ${DATABASE_NAME}

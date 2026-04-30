@@ -24,7 +24,7 @@ services:
     container_name: rehma_redis
     restart: always
     ports:
-      - "127.0.0.1:6379:6379"  # ⚠️ LOCALHOST ONLY - NOT EXPOSED TO INTERNET
+      - "127.0.0.1:6380:6379"  # ⚠️ LOCALHOST ONLY - NOT EXPOSED TO INTERNET
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes

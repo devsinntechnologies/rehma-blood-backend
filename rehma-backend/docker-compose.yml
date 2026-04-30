@@ -96,7 +96,7 @@ services:
       PGADMIN_DEFAULT_EMAIL: admin@admin.com
       PGADMIN_DEFAULT_PASSWORD: pgadmin4
     ports:
-      - "5051:80"
+      - "5052:80"
     depends_on:
       - db
   # cloudflare-tunnel:

@@ -33,3 +33,16 @@ NestJS backend for the Blood Bridge superadmin portal.
 - `GET /map/active-requests`
 - `GET /map/overview`
 - `GET /health`
+
+## User Registration
+
+`POST /user-auth/register` now requires:
+
+- `fullName`
+- `email`
+- `mobileNumber`
+- `dateOfBirth`
+- `weight`
+- `bloodGroup`
+- `lastBloodDonation`
+- `password`

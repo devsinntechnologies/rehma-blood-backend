@@ -22,6 +22,11 @@ export class UserAuthService {
     const user = this.storageService.registerUser({
       fullName: input.fullName,
       email: input.email,
+      mobileNumber: input.mobileNumber,
+      dateOfBirth: input.dateOfBirth,
+      weight: input.weight,
+      bloodGroup: input.bloodGroup,
+      lastBloodDonation: input.lastBloodDonation,
       passwordHash,
     });
 
@@ -37,6 +42,11 @@ export class UserAuthService {
         id: user.id,
         fullName: user.fullName,
         email: user.email,
+        mobileNumber: user.mobileNumber,
+        dateOfBirth: user.dateOfBirth,
+        weight: user.weight,
+        bloodGroup: user.bloodGroup,
+        lastBloodDonation: user.lastBloodDonation,
       },
     };
   }
@@ -59,6 +69,11 @@ export class UserAuthService {
         id: user.id,
         fullName: user.fullName,
         email: user.email,
+        mobileNumber: user.mobileNumber,
+        dateOfBirth: user.dateOfBirth,
+        weight: user.weight,
+        bloodGroup: user.bloodGroup,
+        lastBloodDonation: user.lastBloodDonation,
       },
     };
   }
@@ -70,6 +85,11 @@ export class UserAuthService {
       id: user.id,
       fullName: user.fullName,
       email: user.email,
+      mobileNumber: user.mobileNumber,
+      dateOfBirth: user.dateOfBirth,
+      weight: user.weight,
+      bloodGroup: user.bloodGroup,
+      lastBloodDonation: user.lastBloodDonation,
     };
   }
 }

@@ -1,5 +1,6 @@
-import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { IsDateString, IsEmail, IsNotEmpty, IsNumber, IsString, MinLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 
 export class RegisterUserDto {
   @ApiProperty({ example: 'Muhammad Ali' })
@@ -10,6 +11,29 @@ export class RegisterUserDto {
   @ApiProperty({ example: 'ali@example.com' })
   @IsEmail()
   email!: string;
+
+  @ApiProperty({ example: '+923001234567' })
+  @IsString()
+  @IsNotEmpty()
+  mobileNumber!: string;
+
+  @ApiProperty({ example: '1995-08-15' })
+  @IsDateString()
+  dateOfBirth!: string;
+
+  @ApiProperty({ example: 72 })
+  @Type(() => Number)
+  @IsNumber()
+  weight!: number;
+
+  @ApiProperty({ example: 'A+' })
+  @IsString()
+  @IsNotEmpty()
+  bloodGroup!: string;
+
+  @ApiProperty({ example: '2025-01-10' })
+  @IsDateString()
+  lastBloodDonation!: string;
 
   @ApiProperty({ example: 'SecurePass123!' })
   @IsString()

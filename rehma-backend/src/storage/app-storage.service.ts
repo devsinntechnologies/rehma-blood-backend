@@ -54,6 +54,11 @@ export type UserRecord = {
   id: number;
   fullName: string;
   email: string;
+  mobileNumber: string;
+  dateOfBirth: string;
+  weight: number;
+  bloodGroup: string;
+  lastBloodDonation: string;
   passwordHash: string;
   createdAt: Date;
   updatedAt: Date;
@@ -364,12 +369,26 @@ export class AppStorageService implements OnModuleInit {
     return this.users.find((user) => user.id === id);
   }
 
-  registerUser(input: { fullName: string; email: string; passwordHash: string }): UserRecord {
+  registerUser(input: {
+    fullName: string;
+    email: string;
+    mobileNumber: string;
+    dateOfBirth: string;
+    weight: number;
+    bloodGroup: string;
+    lastBloodDonation: string;
+    passwordHash: string;
+  }): UserRecord {
     const now = new Date();
     const user: UserRecord = {
       id: this.userId++,
       fullName: input.fullName,
       email: input.email,
+      mobileNumber: input.mobileNumber,
+      dateOfBirth: input.dateOfBirth,
+      weight: input.weight,
+      bloodGroup: input.bloodGroup,
+      lastBloodDonation: input.lastBloodDonation,
       passwordHash: input.passwordHash,
       createdAt: now,
       updatedAt: now,

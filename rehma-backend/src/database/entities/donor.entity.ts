@@ -11,6 +11,27 @@ export class Donor {
   @Column({ type: 'varchar', unique: true, nullable: true })
   email?: string;
 
+  @Column({ type: 'varchar', unique: true, nullable: true })
+  promoCode?: string;
+
+  @Column({ default: false })
+  isClaimed!: boolean;
+
+  @Column({ type: 'timestamp', nullable: true })
+  claimedAt?: Date;
+
+  @Column({ type: 'int', nullable: true })
+  createdByUserId?: number;
+
+  @Column({ type: 'int', nullable: true })
+  claimedByUserId?: number;
+
+  @Column({ type: 'int', nullable: true })
+  linkedUserId?: number;
+
+  @Column({ type: 'timestamp', nullable: true })
+  promoCodeExpiresAt?: Date;
+
   @Column({ type: 'varchar', nullable: true })
   bloodGroup?: string;
 

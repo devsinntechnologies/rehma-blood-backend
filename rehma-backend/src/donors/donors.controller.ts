@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards, Request } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags, ApiBody } from '@nestjs/swagger';
 import { DonorsService } from './donors.service';
 import { CreateDonorDto } from './dto/create-donor.dto';
@@ -15,8 +15,9 @@ export class DonorsController {
   @Post()
   @ApiOperation({ summary: 'Create or register a donor profile' })
   @ApiBody({ type: CreateDonorDto })
-  create(@Body() createDonorDto: CreateDonorDto) {
-    return this.donorsService.create(createDonorDto);
+  create(@Request() req: any, @Body() createDonorDto: CreateDonorDto) {
+    const userId = req.user?.sub;
+    return this.donorsService.create(createDonorDto, userId);
   }
 
   @Get()
@@ -25,10 +26,22 @@ export class DonorsController {
     return this.donorsService.findAll();
   }
 
+  @Get('my-created')
+  @ApiOperation({ summary: 'List all donors for the authenticated user (created by user + user own donor profile)' })
+  getMyCreatedDonors(@Request() req: any) {
+    return this.donorsService.getCreatedDonors(Number(req.user.sub));
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get donor by ID' })
   findOne(@Param('id') id: string) {
     return this.donorsService.findOne(Number(id));
+  }
+
+  @Get(':id/promo')
+  @ApiOperation({ summary: 'Get promo code info for a donor' })
+  getPromoInfo(@Param('id') id: string) {
+    return this.donorsService.getPromoCodeInfo(Number(id));
   }
 
   @Patch(':id')
@@ -36,6 +49,18 @@ export class DonorsController {
   @ApiBody({ type: UpdateDonorDto })
   update(@Param('id') id: string, @Body() updateDonorDto: UpdateDonorDto) {
     return this.donorsService.update(Number(id), updateDonorDto);
+  }
+
+  @Patch(':id/disable-promo')
+  @ApiOperation({ summary: 'Disable promo code for a donor (marks as expired)' })
+  disablePromo(@Param('id') id: string) {
+    return this.donorsService.disablePromoCode(Number(id));
+  }
+
+  @Patch(':id/regenerate-promo')
+  @ApiOperation({ summary: 'Regenerate promo code for an unclaimed donor' })
+  regeneratePromo(@Param('id') id: string) {
+    return this.donorsService.regeneratePromoCode(Number(id));
   }
 
   @Delete(':id')

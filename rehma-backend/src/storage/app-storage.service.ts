@@ -21,6 +21,14 @@ export type DonorRecord = {
   longitude?: number | null;
   createdAt: Date;
   updatedAt: Date;
+  promoCode?: string | null;
+  isClaimed?: boolean;
+  claimedAt?: Date | null;
+  createdByUserId?: number | null;
+  claimedByUserId?: number | null;
+  linkedUserId?: number | null;
+  promoCodeExpiresAt?: Date | null;
+  claimStatus?: 'INVITED' | 'CLAIMED' | 'EXPIRED';
 };
 
 export type BloodRequestRecord = {
@@ -33,7 +41,10 @@ export type BloodRequestRecord = {
   notes?: string | null;
   latitude: number;
   longitude: number;
-  status: 'active' | 'completed';
+  status: 'active' | 'accepted' | 'on_the_way' | 'arrived_at_hospital' | 'donation_completed';
+  acceptedByDonorId?: number | null;
+  acceptedByDonorName?: string | null;
+  acceptedAt?: Date | null;
   completedAt?: Date | null;
   fulfilledByDonorId?: number | null;
   fulfilledByDonorName?: string | null;
@@ -116,6 +127,10 @@ export class AppStorageService implements OnModuleInit {
     isAvailable?: boolean;
     latitude?: number | null;
     longitude?: number | null;
+    promoCode?: string | null;
+    createdByUserId?: number | null;
+    isClaimed?: boolean;
+    linkedUserId?: number | null;
   }): DonorRecord {
     const existingDonor = input.email ? this.getDonorByEmail(input.email) : undefined;
     const now = new Date();
@@ -129,6 +144,10 @@ export class AppStorageService implements OnModuleInit {
         isAvailable: input.isAvailable ?? existingDonor.isAvailable,
         latitude: input.latitude ?? existingDonor.latitude ?? null,
         longitude: input.longitude ?? existingDonor.longitude ?? null,
+        promoCode: input.promoCode ?? existingDonor.promoCode ?? null,
+        createdByUserId: input.createdByUserId ?? existingDonor.createdByUserId ?? null,
+        linkedUserId: input.linkedUserId ?? existingDonor.linkedUserId ?? null,
+        isClaimed: input.isClaimed ?? existingDonor.isClaimed ?? false,
         updatedAt: now,
       });
       return existingDonor;
@@ -145,6 +164,13 @@ export class AppStorageService implements OnModuleInit {
       isAvailable: input.isAvailable ?? true,
       latitude: input.latitude ?? null,
       longitude: input.longitude ?? null,
+      promoCode: input.promoCode ?? null,
+      isClaimed: input.isClaimed ?? false,
+      createdByUserId: input.createdByUserId ?? null,
+      claimedByUserId: null,
+      linkedUserId: input.linkedUserId ?? null,
+      promoCodeExpiresAt: null,
+      claimStatus: input.isClaimed ? 'CLAIMED' : 'INVITED',
       createdAt: now,
       updatedAt: now,
     };
@@ -161,6 +187,8 @@ export class AppStorageService implements OnModuleInit {
     bloodGroup?: string | null;
     latitude?: number | null;
     longitude?: number | null;
+    promoCode?: string | null;
+    createdByUserId?: number | null;
   }): DonorRecord {
     return this.addOrUpdateDonor({
       fullName: input.fullName,
@@ -171,6 +199,8 @@ export class AppStorageService implements OnModuleInit {
       isAvailable: true,
       latitude: input.latitude,
       longitude: input.longitude,
+      promoCode: input.promoCode ?? null,
+      createdByUserId: input.createdByUserId ?? null,
     });
   }
 
@@ -181,9 +211,131 @@ export class AppStorageService implements OnModuleInit {
   addDonor(
     input: Pick<DonorRecord, 'fullName' | 'email' | 'phone' | 'bloodGroup' | 'latitude' | 'longitude'> & {
       isAvailable?: boolean;
+      promoCode?: string | null;
+      createdByUserId?: number | null;
     },
   ): DonorRecord {
-    return this.addOrUpdateDonor(input);
+    return this.addOrUpdateDonor({
+      ...input,
+      promoCode: input.promoCode ?? null,
+      createdByUserId: input.createdByUserId ?? null,
+    });
+  }
+
+  getDonorByPromoCode(promoCode: string): DonorRecord | undefined {
+    if (!promoCode) return undefined;
+    return this.donors.find((donor) => donor.promoCode === promoCode);
+  }
+
+  getDonorByLinkedUserId(linkedUserId: number): DonorRecord | undefined {
+    return this.donors.find((donor) => donor.linkedUserId === linkedUserId);
+  }
+
+  getAllDonorsByLinkedUserId(linkedUserId: number): DonorRecord[] {
+    return this.donors
+      .filter((donor) => donor.linkedUserId === linkedUserId)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+  }
+
+  getDonorsByCreatedByUserId(createdByUserId: number): DonorRecord[] {
+    return this.donors
+      .filter((donor) => donor.createdByUserId === createdByUserId)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+  }
+
+  getAllMyDonors(userId: number): DonorRecord[] {
+    // Get both created donors and user's own donor profile
+    const created = this.donors.filter((donor) => donor.createdByUserId === userId);
+    const owned = this.donors.filter((donor) => donor.linkedUserId === userId);
+    
+    // Merge and remove duplicates (if a donor is both created and owned)
+    const allDonors = [...created, ...owned];
+    const seen = new Set<number>();
+    const unique = allDonors.filter((donor) => {
+      if (seen.has(donor.id)) return false;
+      seen.add(donor.id);
+      return true;
+    });
+
+    return unique.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+  }
+
+  disablePromoCode(donorId: number): DonorRecord | undefined {
+    const donor = this.getDonor(donorId);
+    if (!donor) return undefined;
+    donor.promoCode = null;
+    donor.claimStatus = 'EXPIRED';
+    donor.updatedAt = new Date();
+    return donor;
+  }
+
+  regeneratePromoCode(donorId: number): { donor: DonorRecord; newPromoCode: string } | undefined {
+    const donor = this.getDonor(donorId);
+    if (!donor) return undefined;
+    if (donor.isClaimed) {
+      throw new Error('Cannot regenerate promo code for a claimed donor');
+    }
+
+    const generateCode = () => {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+      const part = Array.from({ length: 6 })
+        .map(() => chars[Math.floor(Math.random() * chars.length)])
+        .join('');
+      return `RB-${part}`;
+    };
+
+    let promo = generateCode();
+    let attempts = 0;
+    while (this.getDonorByPromoCode(promo) && attempts < 10) {
+      promo = generateCode();
+      attempts += 1;
+    }
+
+    donor.promoCode = promo;
+    donor.claimStatus = 'INVITED';
+    donor.updatedAt = new Date();
+    return { donor, newPromoCode: promo };
+  }
+
+  markDonorClaimed(donorId: number, claimedByUserId: number, linkedUserId?: number): DonorRecord | undefined {
+    const donor = this.getDonor(donorId);
+    if (!donor) return undefined;
+    donor.isClaimed = true;
+    donor.claimedAt = new Date();
+    donor.claimedByUserId = claimedByUserId;
+    donor.linkedUserId = linkedUserId ?? claimedByUserId;
+    donor.claimStatus = 'CLAIMED';
+    donor.updatedAt = new Date();
+    return donor;
+  }
+
+  createDonorFromUser(userId: number, user: UserRecord): DonorRecord {
+    // Create a new donor record from user data without checking email (to avoid conflicts with invited donors)
+    const now = new Date();
+    const donor: DonorRecord = {
+      id: this.donorId++,
+      fullName: user.fullName,
+      email: user.email,
+      phone: null,
+      bloodGroup: user.bloodGroup,
+      passwordHash: null,
+      isActive: true,
+      isAvailable: true,
+      latitude: null,
+      longitude: null,
+      promoCode: null,
+      isClaimed: true,
+      createdByUserId: null,  // Not created by anyone, it's the user's own donor record
+      claimedByUserId: userId,
+      linkedUserId: userId,
+      promoCodeExpiresAt: null,
+      claimStatus: 'CLAIMED',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    this.donors.push(donor);
+    return donor;
   }
 
   getDonor(id: number): DonorRecord | undefined {
@@ -248,6 +400,9 @@ export class AppStorageService implements OnModuleInit {
       latitude: input.latitude,
       longitude: input.longitude,
       status: 'active',
+      acceptedByDonorId: null,
+      acceptedByDonorName: null,
+      acceptedAt: null,
       completedAt: null,
       fulfilledByDonorId: null,
       fulfilledByDonorName: null,
@@ -269,21 +424,55 @@ export class AppStorageService implements OnModuleInit {
     return bloodRequest;
   }
 
-  completeBloodRequest(id: number, donorId: number): BloodRequestRecord | undefined {
+  updateBloodRequestStatus(
+    id: number,
+    status: BloodRequestRecord['status'],
+    donorId?: number | null,
+  ): BloodRequestRecord | undefined {
     const bloodRequest = this.getBloodRequest(id);
-    const donor = this.getDonor(donorId);
+    if (!bloodRequest) return undefined;
 
-    if (!bloodRequest || !donor) {
+    const donor = donorId ? this.getDonor(donorId) : undefined;
+    const now = new Date();
+
+    bloodRequest.status = status;
+
+    if (status === 'accepted' && donor) {
+      bloodRequest.acceptedByDonorId = donor.id;
+      bloodRequest.acceptedByDonorName = donor.fullName;
+      bloodRequest.acceptedAt = now;
+    }
+
+    if (donor && !bloodRequest.acceptedByDonorId) {
+      bloodRequest.acceptedByDonorId = donor.id;
+      bloodRequest.acceptedByDonorName = donor.fullName;
+    }
+
+    if (status === 'donation_completed') {
+      bloodRequest.completedAt = now;
+      if (donor) {
+        bloodRequest.fulfilledByDonorId = donor.id;
+        bloodRequest.fulfilledByDonorName = donor.fullName;
+      } else if (bloodRequest.acceptedByDonorId && !bloodRequest.fulfilledByDonorId) {
+        bloodRequest.fulfilledByDonorId = bloodRequest.acceptedByDonorId;
+        bloodRequest.fulfilledByDonorName = bloodRequest.acceptedByDonorName ?? undefined;
+      }
+    }
+
+    bloodRequest.updatedAt = now;
+    return bloodRequest;
+  }
+
+  completeBloodRequest(id: number, donorId: number): BloodRequestRecord | undefined {
+    const bloodRequest = this.updateBloodRequestStatus(id, 'donation_completed', donorId);
+    if (!bloodRequest) {
       return undefined;
     }
 
-    bloodRequest.status = 'completed';
-    bloodRequest.completedAt = new Date();
-    bloodRequest.fulfilledByDonorId = donor.id;
-    bloodRequest.fulfilledByDonorName = donor.fullName;
-    bloodRequest.updatedAt = new Date();
-
-    this.addBloodDonation({ donorName: donor.fullName, bloodGroup: bloodRequest.bloodGroup });
+    const donor = this.getDonor(donorId);
+    if (donor) {
+      this.addBloodDonation({ donorName: donor.fullName, bloodGroup: bloodRequest.bloodGroup });
+    }
     return bloodRequest;
   }
 

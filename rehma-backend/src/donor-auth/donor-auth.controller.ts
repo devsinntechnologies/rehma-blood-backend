@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Request, UseGuards, HttpException, HttpStatus } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags, ApiBody } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../shared/guards/jwt-auth.guard';
 import { DonorAuthService } from './donor-auth.service';
@@ -16,7 +16,7 @@ export class DonorAuthController {
   @ApiOperation({ summary: 'Register a donor account' })
   @ApiBody({ type: RegisterDonorDto })
   register(@Body() dto: RegisterDonorDto) {
-    return this.donorAuthService.register(dto);
+    throw new HttpException('Donor registration endpoint is deprecated. Use POST /user-auth/register with `promoCode` instead.', HttpStatus.GONE);
   }
 
   @Post('login')

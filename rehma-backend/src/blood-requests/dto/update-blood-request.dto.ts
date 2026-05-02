@@ -25,10 +25,7 @@ export class UpdateBloodRequestDto {
   @IsOptional()
   urgency?: 'urgent' | 'normal';
 
-  @ApiPropertyOptional({ example: 'Accident patient needs blood quickly' })
-  @IsString()
-  @IsOptional()
-  status?: 'active' | 'completed';
+  
 
   @ApiPropertyOptional({ example: 31.5204 })
   @Type(() => Number)
@@ -46,4 +43,9 @@ export class UpdateBloodRequestDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  @ApiPropertyOptional({ example: 'accepted', enum: ['active','accepted','on_the_way','arrived_at_hospital','donation_completed'] })
+  @IsIn(['active', 'accepted', 'on_the_way', 'arrived_at_hospital', 'donation_completed'])
+  @IsOptional()
+  status?: 'active' | 'accepted' | 'on_the_way' | 'arrived_at_hospital' | 'donation_completed';
 }

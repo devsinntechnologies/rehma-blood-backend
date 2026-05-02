@@ -46,3 +46,19 @@ NestJS backend for the Blood Bridge superadmin portal.
 - `bloodGroup`
 - `lastBloodDonation`
 - `password`
+
+## User Auth
+
+- `POST /user-auth/forgot-password` generates a reset token for a user account.
+- `GET /user-auth/me` is marked with the correct Swagger bearer auth scheme, so the lock button should now attach the token header in docs.
+
+## Blood Request Statuses
+
+Use `PATCH /blood-requests/:id/status` to move a request through:
+
+- `accepted`
+- `on_the_way`
+- `arrived_at_hospital`
+- `donation_completed`
+
+If the caller is an authenticated donor, the donor ID is taken from the JWT when `donorId` is not sent.

@@ -1,12 +1,35 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { CreateDonorDto } from './dto/create-donor.dto';
 import { UpdateDonorDto } from './dto/update-donor.dto';
+import { UpdateDonorAvailabilityDto } from './dto/update-donor-availability.dto';
 import { AppStorageService } from '../storage/app-storage.service';
 
 @Injectable()
 export class DonorsService {
   constructor(private readonly appStorageService: AppStorageService) {}
+
+  private canManageDonor(donorId: number, userId?: number, userRole?: string): boolean {
+    if (userRole === 'superadmin') {
+      return true;
+    }
+
+    const donor = this.appStorageService.getDonor(donorId);
+    if (!donor || userId == null) {
+      return false;
+    }
+
+    return this.appStorageService.getDonorOwnerUserId(donor) === userId;
+  }
+
   create(createDonorDto: CreateDonorDto, createdByUserId?: number) {
+    // Check if a donor with this phone already exists
+    if (createDonorDto.phone) {
+      const existingDonor = this.appStorageService.getDonorByPhone(createDonorDto.phone);
+      if (existingDonor) {
+        throw new ConflictException('Donor with this phone number already exists');
+      }
+    }
+
     // generate a collision-safe promo code
     const generateCode = () => {
       const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -27,9 +50,10 @@ export class DonorsService {
       ...createDonorDto,
       promoCode: promo,
       createdByUserId: createdByUserId ?? null,
+      isVerifiedAccount: false,
     });
 
-    return { donor, promoCode: promo };
+    return { donor, promoCode: promo, message: 'Donor profile created successfully' };
   }
 
   findAll() {
@@ -44,8 +68,12 @@ export class DonorsService {
     return donor;
   }
 
-  async update(id: number, updateDonorDto: UpdateDonorDto) {
+  async update(id: number, updateDonorDto: UpdateDonorDto, userId?: number, userRole?: string) {
     await this.findOne(id);
+    if (!this.canManageDonor(id, userId, userRole)) {
+      throw new ForbiddenException('Only the donor owner or superadmin can update this donor');
+    }
+
     const donor = this.appStorageService.updateDonor(id, updateDonorDto);
     if (!donor) {
       throw new NotFoundException(`Donor with ID ${id} not found`);
@@ -69,14 +97,43 @@ export class DonorsService {
     return donor;
   }
 
-  async remove(id: number) {
+  updateAvailabilityStatus(id: number, updateDto: UpdateDonorAvailabilityDto, userId?: number, userRole?: string) {
+    const donor = this.appStorageService.getDonor(id);
+    if (!donor) {
+      throw new NotFoundException(`Donor with ID ${id} not found`);
+    }
+
+    if (!this.canManageDonor(id, userId, userRole)) {
+      throw new ForbiddenException('Only the donor owner or superadmin can update availability status');
+    }
+
+    const updated = this.appStorageService.updateDonorAvailabilityStatus(id, updateDto.availabilityStatus);
+    if (!updated) {
+      throw new NotFoundException(`Donor with ID ${id} not found`);
+    }
+    return { donor: updated, message: `Donor availability status updated to ${updateDto.availabilityStatus}` };
+  }
+
+  async remove(id: number, userId?: number, userRole?: string) {
     await this.findOne(id);
+    if (!this.canManageDonor(id, userId, userRole)) {
+      throw new ForbiddenException('Only the donor owner or superadmin can delete this donor');
+    }
+
     this.appStorageService.deleteDonor(id);
     return { message: `Donor with ID ${id} deleted` };
   }
 
   getCreatedDonors(userId: number) {
-    return this.appStorageService.getAllMyDonors(userId);
+    const allDonors = this.appStorageService.getAllMyDonors(userId);
+    // Return only one donor per phone number (merge duplicate donors with same phone)
+    const donorsByPhone = new Map();
+    for (const donor of allDonors) {
+      if (!donorsByPhone.has(donor.phone)) {
+        donorsByPhone.set(donor.phone, donor);
+      }
+    }
+    return Array.from(donorsByPhone.values());
   }
 
   disablePromoCode(id: number) {

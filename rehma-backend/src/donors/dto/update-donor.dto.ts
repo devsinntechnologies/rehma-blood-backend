@@ -22,6 +22,26 @@ export class UpdateDonorDto {
   @IsOptional()
   bloodGroup?: string;
 
+  @ApiPropertyOptional({ example: 'Lahore' })
+  @IsString()
+  @IsOptional()
+  city?: string;
+
+  @ApiPropertyOptional({ example: 'Male' })
+  @IsString()
+  @IsOptional()
+  gender?: string;
+
+  @ApiPropertyOptional({ example: '2025-01-10' })
+  @IsString()
+  @IsOptional()
+  lastDonationDate?: string;
+
+  @ApiPropertyOptional({ example: 'Optional medical notes' })
+  @IsString()
+  @IsOptional()
+  medicalNotes?: string;
+
   @ApiPropertyOptional({ example: true })
   @IsBoolean()
   @IsOptional()

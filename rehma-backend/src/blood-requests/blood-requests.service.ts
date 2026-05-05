@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { CreateBloodRequestDto } from './dto/create-blood-request.dto';
 import { UpdateBloodRequestDto } from './dto/update-blood-request.dto';
 import { AppStorageService } from '../storage/app-storage.service';
@@ -7,8 +7,23 @@ import { AppStorageService } from '../storage/app-storage.service';
 export class BloodRequestsService {
   constructor(private readonly appStorageService: AppStorageService) {}
 
-  create(createBloodRequestDto: CreateBloodRequestDto) {
-    return this.appStorageService.addBloodRequest(createBloodRequestDto);
+  create(createBloodRequestDto: CreateBloodRequestDto, userId?: number) {
+    // Check if user has at least one available donor to create a blood request
+    if (userId) {
+      if (this.appStorageService.hasOpenBloodRequestForUser(userId)) {
+        throw new ForbiddenException('You already have an open blood request. Complete it before creating a new one');
+      }
+
+      const hasAvailable = this.appStorageService.hasAvailableDonor(userId);
+      if (!hasAvailable) {
+        throw new ForbiddenException('You must have at least one donor with Available status to create a blood request');
+      }
+    }
+
+    return this.appStorageService.addBloodRequest({
+      ...createBloodRequestDto,
+      requesterUserId: userId ?? null,
+    });
   }
 
   findAll() {

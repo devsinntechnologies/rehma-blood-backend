@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards, Request } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags, ApiBody } from '@nestjs/swagger';
 import { BloodRequestsService } from './blood-requests.service';
 import { CreateBloodRequestDto } from './dto/create-blood-request.dto';
@@ -16,8 +16,9 @@ export class BloodRequestsController {
   @Post()
   @ApiOperation({ summary: 'Create a blood request' })
   @ApiBody({ type: CreateBloodRequestDto })
-  create(@Body() createBloodRequestDto: CreateBloodRequestDto) {
-    return this.bloodRequestsService.create(createBloodRequestDto);
+  create(@Request() req: any, @Body() createBloodRequestDto: CreateBloodRequestDto) {
+    const userId = req.user?.sub;
+    return this.bloodRequestsService.create(createBloodRequestDto, userId);
   }
 
   @Get()

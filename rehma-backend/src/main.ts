@@ -2,6 +2,8 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { HttpExceptionFilter } from './shared/http-exception.filter';
+import { HttpResponseInterceptor } from './shared/http-response.interceptor';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
@@ -13,6 +15,9 @@ async function bootstrap(): Promise<void> {
       forbidNonWhitelisted: true,
     }),
   );
+
+  app.useGlobalFilters(new HttpExceptionFilter());
+  app.useGlobalInterceptors(new HttpResponseInterceptor());
 
   app.enableCors();
 

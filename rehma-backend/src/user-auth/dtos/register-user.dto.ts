@@ -31,9 +31,42 @@ export class RegisterUserDto {
   @IsNotEmpty()
   bloodGroup!: string;
 
-  @ApiProperty({ example: '2025-01-10' })
+  @ApiPropertyOptional({ example: 'Lahore' })
+  @IsOptional()
+  @IsString()
+  city?: string;
+
+  @ApiPropertyOptional({ example: 'Male' })
+  @IsOptional()
+  @IsString()
+  gender?: string;
+
+  @ApiPropertyOptional({ example: 31.5204 })
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber()
+  latitude?: number;
+
+  @ApiPropertyOptional({ example: 74.3587 })
+  @Type(() => Number)
+  @IsOptional()
+  @IsNumber()
+  longitude?: number;
+
+  @ApiPropertyOptional({ example: '35202-1234567-1' })
+  @IsOptional()
+  @IsString()
+  cnic?: string;
+
+  @ApiPropertyOptional({ example: 'https://example.com/profile.jpg' })
+  @IsOptional()
+  @IsString()
+  profileImage?: string;
+
+  @ApiPropertyOptional({ example: '2025-01-10' })
+  @IsOptional()
   @IsDateString()
-  lastBloodDonation!: string;
+  lastDonationDate?: string;
 
   @ApiProperty({ example: 'SecurePass123!' })
   @IsString()

@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Post, UseGuards, Request, HttpException, HttpStatus } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiBody } from '@nestjs/swagger';
 import { UserAuthService } from './user-auth.service';
 import { RegisterUserDto } from './dtos/register-user.dto';
 import { LoginUserDto } from './dtos/login-user.dto';
+import { UpdateUserProfileDto } from './dtos/update-user-profile.dto';
 import { ForgotPasswordDto } from '../auth/dto/forgot-password.dto';
 import { JwtAuthGuard } from '../shared/guards/jwt-auth.guard';
 
@@ -15,33 +16,21 @@ export class UserAuthController {
   @ApiOperation({ summary: 'Register a new user (blood recipient/patient)' })
   @ApiBody({ type: RegisterUserDto })
   async register(@Body() registerUserDto: RegisterUserDto) {
-    try {
-      return await this.userAuthService.register(registerUserDto);
-    } catch (error) {
-      throw new HttpException((error as any).message || 'Registration failed', HttpStatus.BAD_REQUEST);
-    }
+    return this.userAuthService.register(registerUserDto);
   }
 
   @Post('login')
   @ApiOperation({ summary: 'Login as user (blood recipient/patient)' })
   @ApiBody({ type: LoginUserDto })
   async login(@Body() loginUserDto: LoginUserDto) {
-    try {
-      return await this.userAuthService.login(loginUserDto);
-    } catch (error) {
-      throw new HttpException((error as any).message || 'Login failed', HttpStatus.UNAUTHORIZED);
-    }
+    return this.userAuthService.login(loginUserDto);
   }
 
   @Post('forgot-password')
   @ApiOperation({ summary: 'Request a password reset for a user account' })
   @ApiBody({ type: ForgotPasswordDto })
   async forgotPassword(@Body() dto: ForgotPasswordDto) {
-    try {
-      return await this.userAuthService.forgotPassword(dto.email);
-    } catch (error) {
-      throw new HttpException((error as any).message || 'Failed to process forgot password request', HttpStatus.BAD_REQUEST);
-    }
+    return this.userAuthService.forgotPassword(dto.email);
   }
 
   @Get('me')
@@ -49,11 +38,16 @@ export class UserAuthController {
   @ApiBearerAuth('jwt')
   @ApiOperation({ summary: 'Get current user profile' })
   async getMe(@Request() req: any) {
-    const user = this.userAuthService.getCurrentUser(req.user.sub);
-    if (!user) {
-      throw new HttpException('User not found', HttpStatus.NOT_FOUND);
-    }
-    return user;
+    return this.userAuthService.getCurrentUser(req.user.sub);
+  }
+
+  @Patch('me')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('jwt')
+  @ApiOperation({ summary: 'Update current user profile' })
+  @ApiBody({ type: UpdateUserProfileDto })
+  async updateMe(@Request() req: any, @Body() dto: UpdateUserProfileDto) {
+    return this.userAuthService.updateCurrentUser(Number(req.user.sub), dto);
   }
 
   @Get('me/donor-profile')
@@ -61,10 +55,6 @@ export class UserAuthController {
   @ApiBearerAuth('jwt')
   @ApiOperation({ summary: 'Get all donor profiles linked to current user' })
   async getMyDonorProfile(@Request() req: any) {
-    const donors = this.userAuthService.getMyDonorProfile(Number(req.user.sub));
-    if (!donors) {
-      throw new HttpException('No donor profiles found for current user', HttpStatus.NOT_FOUND);
-    }
-    return donors;
+    return this.userAuthService.getMyDonorProfile(Number(req.user.sub));
   }
 }

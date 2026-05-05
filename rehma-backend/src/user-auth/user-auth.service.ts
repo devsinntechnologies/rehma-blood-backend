@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { AppStorageService, UserRecord } from '../storage/app-storage.service';
 import { RegisterUserDto } from './dtos/register-user.dto';
 import { LoginUserDto } from './dtos/login-user.dto';
+import { UpdateUserProfileDto } from './dtos/update-user-profile.dto';
 
 @Injectable()
 export class UserAuthService {
@@ -12,14 +13,14 @@ export class UserAuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  async register(input: RegisterUserDto): Promise<{ accessToken: string; user: Partial<UserRecord> }> {
-    const existingUser = this.storageService.getUserByEmail(input.email);
-    if (existingUser) {
-      throw new Error('User already exists');
+  async register(input: RegisterUserDto): Promise<{ accessToken: string; user: Partial<UserRecord>; donorProfiles: unknown[] }> {
+    const existingUserByEmail = this.storageService.getUserByEmail(input.email);
+    const existingUserByPhone = this.storageService.getUserByMobileNumber(input.mobileNumber);
+    if (existingUserByEmail || existingUserByPhone) {
+      throw new ConflictException('User already exists');
     }
     const passwordHash = await bcrypt.hash(input.password, 10);
 
-    // Create the user
     const user = this.storageService.registerUser({
       fullName: input.fullName,
       email: input.email,
@@ -27,28 +28,63 @@ export class UserAuthService {
       dateOfBirth: input.dateOfBirth,
       weight: input.weight,
       bloodGroup: input.bloodGroup,
-      lastBloodDonation: input.lastBloodDonation,
       passwordHash,
     });
 
-    let claimedDonor: any = undefined;
+    const donorDetails = {
+      fullName: input.fullName,
+      email: input.email,
+      phone: input.mobileNumber,
+      bloodGroup: input.bloodGroup,
+      city: input.city ?? null,
+      gender: input.gender ?? null,
+      dateOfBirth: input.dateOfBirth,
+      cnic: input.cnic ?? null,
+      profileImage: input.profileImage ?? null,
+      lastDonationDate: input.lastDonationDate ?? null,
+      medicalNotes: null,
+      latitude: input.latitude ?? null,
+      longitude: input.longitude ?? null,
+      promoCode: input.promoCode ?? null,
+    };
 
-    // If a promo code supplied, claim the invited donor
+    const donorProfiles: unknown[] = [];
+
+    const phoneMatchedDonor = this.storageService.getDonorByPhone(input.mobileNumber);
+    if (phoneMatchedDonor?.isVerifiedAccount) {
+      throw new ConflictException('Donor with this phone number already exists');
+    }
+
+    const primaryDonor = phoneMatchedDonor
+      ? this.storageService.transferDonorOwnership(phoneMatchedDonor.id, user.id, donorDetails)
+      : this.storageService.createDonorForUser(user.id, donorDetails);
+
+    if (!primaryDonor) {
+      throw new BadRequestException('Unable to create donor profile');
+    }
+
+    donorProfiles.push(primaryDonor);
+
     if (input.promoCode) {
       const donor = this.storageService.getDonorByPromoCode(input.promoCode);
       if (!donor) {
-        throw new Error('Invalid promo code');
-      }
-      if (donor.isClaimed) {
-        throw new Error('Promo code has already been claimed');
+        throw new BadRequestException('Invalid promo code');
       }
 
-      // Link donor to user
-      claimedDonor = this.storageService.markDonorClaimed(donor.id, user.id, user.id);
+      // If promo code is on the same donor that was just transferred via phone, skip double-claiming
+      if (donor.id !== primaryDonor.id) {
+        // Only check claimed status if it's a different donor
+        if (donor.isClaimed || donor.isVerifiedAccount) {
+          throw new ConflictException('Promo code has already been claimed');
+        }
+
+        const claimedDonor = this.storageService.transferDonorOwnership(donor.id, user.id, donorDetails);
+        if (!claimedDonor) {
+          throw new BadRequestException('Unable to claim promo donor profile');
+        }
+        donorProfiles.push(claimedDonor);
+      }
     }
-
-    // Automatically create a donor record for the newly registered user
-    const userDonor = this.storageService.createDonorFromUser(user.id, user);
 
     const accessToken = this.jwtService.sign({
       sub: user.id,
@@ -56,7 +92,7 @@ export class UserAuthService {
       role: 'user',
     });
 
-    const response: { accessToken: string; user: Partial<UserRecord>; donors?: any[] } = {
+    const response: { accessToken: string; user: Partial<UserRecord>; donorProfiles: unknown[] } = {
       accessToken,
       user: {
         id: user.id,
@@ -67,20 +103,10 @@ export class UserAuthService {
         weight: user.weight,
         bloodGroup: user.bloodGroup,
         lastBloodDonation: user.lastBloodDonation,
+        role: user.role,
       },
+      donorProfiles,
     };
-
-    // Return both claimed donor and user's own donor record
-    const donors = [];
-    if (claimedDonor) {
-      donors.push(claimedDonor);
-    }
-    if (userDonor) {
-      donors.push(userDonor);
-    }
-    if (donors.length > 0) {
-      response.donors = donors;
-    }
 
     return response;
   }
@@ -88,7 +114,7 @@ export class UserAuthService {
   async login(input: LoginUserDto): Promise<{ accessToken: string; user: Partial<UserRecord> }> {
     const user = this.storageService.authenticateUser(input.email, input.password);
     if (!user) {
-      throw new Error('Invalid email or password');
+      throw new UnauthorizedException('Invalid email or password');
     }
 
     const accessToken = this.jwtService.sign({
@@ -108,6 +134,7 @@ export class UserAuthService {
         weight: user.weight,
         bloodGroup: user.bloodGroup,
         lastBloodDonation: user.lastBloodDonation,
+        role: user.role,
       },
     };
   }
@@ -127,9 +154,11 @@ export class UserAuthService {
     };
   }
 
-  getCurrentUser(userId: number): Partial<UserRecord> | null {
+  getCurrentUser(userId: number): Partial<UserRecord> {
     const user = this.storageService.getUserById(userId);
-    if (!user) return null;
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
     return {
       id: user.id,
       fullName: user.fullName,
@@ -139,12 +168,53 @@ export class UserAuthService {
       weight: user.weight,
       bloodGroup: user.bloodGroup,
       lastBloodDonation: user.lastBloodDonation,
+      role: user.role,
     };
   }
 
   getMyDonorProfile(userId: number) {
-    // Get all donors linked to this user (both claimed and created)
-    const donors = this.storageService.getAllDonorsByLinkedUserId(userId);
-    return donors.length > 0 ? donors : null;
+    const donors = this.storageService.getDonorsByUserId(userId);
+    if (donors.length === 0) {
+      throw new NotFoundException('No donor profiles found for current user');
+    }
+    return donors;
+  }
+
+  updateCurrentUser(userId: number, input: UpdateUserProfileDto): Partial<UserRecord> {
+    const existingUser = this.storageService.getUserById(userId);
+    if (!existingUser) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (input.email && input.email !== existingUser.email) {
+      const userByEmail = this.storageService.getUserByEmail(input.email);
+      if (userByEmail && userByEmail.id !== userId) {
+        throw new ConflictException('Email is already in use');
+      }
+    }
+
+    if (input.mobileNumber && input.mobileNumber !== existingUser.mobileNumber) {
+      const userByMobile = this.storageService.getUserByMobileNumber(input.mobileNumber);
+      if (userByMobile && userByMobile.id !== userId) {
+        throw new ConflictException('Mobile number is already in use');
+      }
+    }
+
+    const user = this.storageService.updateUserProfile(userId, input);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return {
+      id: user.id,
+      fullName: user.fullName,
+      email: user.email,
+      mobileNumber: user.mobileNumber,
+      dateOfBirth: user.dateOfBirth,
+      weight: user.weight,
+      bloodGroup: user.bloodGroup,
+      lastBloodDonation: user.lastBloodDonation,
+      role: user.role,
+    };
   }
 }

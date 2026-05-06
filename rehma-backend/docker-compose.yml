@@ -76,11 +76,6 @@ services:
         condition: service_healthy
     ports:
       - "7676:3000"
-    # Use the image-built production artifact (don't bind-mount the project root,
-    # which would hide the image's `dist` directory). For local dev, re-add a
-    # separate dev service or remove the build step.
-    volumes:
-      - /app/node_modules
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
       interval: 30s

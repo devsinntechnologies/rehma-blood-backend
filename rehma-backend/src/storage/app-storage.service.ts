@@ -73,6 +73,33 @@ export type BloodDonationRecord = {
   updatedAt: Date;
 };
 
+export type NotificationRecord = {
+  id: number;
+  recipientRole: 'superadmin' | 'donor' | 'user';
+  recipientUserId: number;
+  type:
+    | 'blood_request_created'
+    | 'blood_request_updated'
+    | 'blood_request_completed'
+    | 'blood_donation_created'
+    | 'blood_donation_updated'
+    | 'donor_created'
+    | 'donor_updated'
+    | 'donor_status_changed'
+    | 'donor_ownership_transferred'
+    | 'promo_updated'
+    | 'system';
+  title: string;
+  message: string;
+  entityType?: string | null;
+  entityId?: number | null;
+  metadata?: Record<string, unknown> | null;
+  isRead: boolean;
+  readAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 export type UserRecord = {
   id: number;
   fullName: string;
@@ -102,6 +129,7 @@ export class AppStorageService implements OnModuleInit {
   private donors: DonorRecord[] = [];
   private bloodRequests: BloodRequestRecord[] = [];
   private bloodDonations: BloodDonationRecord[] = [];
+  private notifications: NotificationRecord[] = [];
   private users: UserRecord[] = [];
   private resetTokens: ResetTokenRecord[] = [];
 
@@ -125,6 +153,14 @@ export class AppStorageService implements OnModuleInit {
 
   getSuperAdminByEmail(email: string): SuperAdminRecord | undefined {
     return this.superAdmins.find((superAdmin) => superAdmin.email === email);
+  }
+
+  listSuperAdmins(): SuperAdminRecord[] {
+    return [...this.superAdmins];
+  }
+
+  getSuperAdminById(id: number): SuperAdminRecord | undefined {
+    return this.superAdmins.find((superAdmin) => superAdmin.id === id);
   }
 
   getDonorByEmail(email: string): DonorRecord | undefined {
@@ -714,6 +750,73 @@ export class AppStorageService implements OnModuleInit {
     if (index === -1) return false;
     this.bloodDonations.splice(index, 1);
     return true;
+  }
+
+  addNotification(input: {
+    recipientRole: NotificationRecord['recipientRole'];
+    recipientUserId: number;
+    type: NotificationRecord['type'];
+    title: string;
+    message: string;
+    entityType?: string | null;
+    entityId?: number | null;
+    metadata?: Record<string, unknown> | null;
+  }): NotificationRecord {
+    const now = new Date();
+    const notification: NotificationRecord = {
+      id: this.notifications.length + 1,
+      recipientRole: input.recipientRole,
+      recipientUserId: input.recipientUserId,
+      type: input.type,
+      title: input.title,
+      message: input.message,
+      entityType: input.entityType ?? null,
+      entityId: input.entityId ?? null,
+      metadata: input.metadata ?? null,
+      isRead: false,
+      readAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.notifications.push(notification);
+    return notification;
+  }
+
+  listNotifications(recipientRole: NotificationRecord['recipientRole'], recipientUserId: number): NotificationRecord[] {
+    return [...this.notifications]
+      .filter((notification) => notification.recipientRole === recipientRole && notification.recipientUserId === recipientUserId)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+  }
+
+  getNotification(id: number): NotificationRecord | undefined {
+    return this.notifications.find((notification) => notification.id === id);
+  }
+
+  markNotificationAsRead(id: number): NotificationRecord | undefined {
+    const notification = this.getNotification(id);
+    if (!notification) return undefined;
+    notification.isRead = true;
+    notification.readAt = new Date();
+    notification.updatedAt = new Date();
+    return notification;
+  }
+
+  markAllNotificationsAsRead(recipientRole: NotificationRecord['recipientRole'], recipientUserId: number): NotificationRecord[] {
+    const now = new Date();
+    return this.notifications
+      .filter((notification) => notification.recipientRole === recipientRole && notification.recipientUserId === recipientUserId)
+      .map((notification) => {
+        notification.isRead = true;
+        notification.readAt = now;
+        notification.updatedAt = now;
+        return notification;
+      });
+  }
+
+  getUnreadNotificationCount(recipientRole: NotificationRecord['recipientRole'], recipientUserId: number): number {
+    return this.notifications.filter(
+      (notification) => notification.recipientRole === recipientRole && notification.recipientUserId === recipientUserId && !notification.isRead,
+    ).length;
   }
 
   stats(): { donors: number; bloodRequests: number; donations: number } {

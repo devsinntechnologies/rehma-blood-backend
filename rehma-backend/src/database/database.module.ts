@@ -5,6 +5,7 @@ import { BloodDonation } from './entities/blood-donation.entity';
 import { BloodRequest } from './entities/blood-request.entity';
 import { Donor } from './entities/donor.entity';
 import { SuperAdmin } from './entities/superadmin.entity';
+import { ActivityLog } from './entities/activity-log.entity';
 import { SuperAdminService } from './superadmin.service';
 
 @Module({
@@ -19,11 +20,11 @@ import { SuperAdminService } from './superadmin.service';
         username: configService.get<string>('DATABASE_USER', 'postgres'),
         password: configService.get<string>('DATABASE_PASSWORD', 'postgres'),
         database: configService.get<string>('DATABASE_NAME', 'rehma_blood'),
-        entities: [SuperAdmin, Donor, BloodRequest, BloodDonation],
+        entities: [SuperAdmin, Donor, BloodRequest, BloodDonation, ActivityLog],
         synchronize: true, // Set to false in production
       }),
     }),
-    TypeOrmModule.forFeature([SuperAdmin, Donor, BloodRequest, BloodDonation]),
+    TypeOrmModule.forFeature([SuperAdmin, Donor, BloodRequest, BloodDonation, ActivityLog]),
   ],
   providers: [SuperAdminService],
   exports: [SuperAdminService, TypeOrmModule],

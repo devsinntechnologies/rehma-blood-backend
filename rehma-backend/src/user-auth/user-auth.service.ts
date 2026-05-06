@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException, 
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { AppStorageService, UserRecord } from '../storage/app-storage.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { RegisterUserDto } from './dtos/register-user.dto';
 import { LoginUserDto } from './dtos/login-user.dto';
 import { UpdateUserProfileDto } from './dtos/update-user-profile.dto';
@@ -11,6 +12,7 @@ export class UserAuthService {
   constructor(
     private readonly storageService: AppStorageService,
     private readonly jwtService: JwtService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async register(input: RegisterUserDto): Promise<{ accessToken: string; user: Partial<UserRecord>; donorProfiles: unknown[] }> {
@@ -63,6 +65,27 @@ export class UserAuthService {
       throw new BadRequestException('Unable to create donor profile');
     }
 
+    // Notify the original creator if ownership was transferred
+    if (phoneMatchedDonor && phoneMatchedDonor.createdByUserId) {
+      this.notificationsService.create({
+        recipient: {
+          role: 'user',
+          userId: phoneMatchedDonor.createdByUserId,
+        },
+        type: 'donor_ownership_transferred',
+        title: 'Donor Profile Claimed',
+        message: `The donor profile for ${primaryDonor.fullName} that you created has been claimed and verified by the registered user.`,
+        entityType: 'donor',
+        entityId: primaryDonor.id,
+        metadata: {
+          originalCreatorId: phoneMatchedDonor.createdByUserId,
+          newOwnerId: user.id,
+          donorId: primaryDonor.id,
+          transferReason: 'phone_match',
+        },
+      });
+    }
+
     donorProfiles.push(primaryDonor);
 
     if (input.promoCode) {
@@ -82,6 +105,29 @@ export class UserAuthService {
         if (!claimedDonor) {
           throw new BadRequestException('Unable to claim promo donor profile');
         }
+
+        // Notify the original creator if ownership was transferred via promo code
+        if (donor.createdByUserId) {
+          this.notificationsService.create({
+            recipient: {
+              role: 'user',
+              userId: donor.createdByUserId,
+            },
+            type: 'donor_ownership_transferred',
+            title: 'Donor Profile Claimed via Promo Code',
+            message: `The donor profile for ${claimedDonor.fullName} that you created has been claimed via promo code and verified by the registered user.`,
+            entityType: 'donor',
+            entityId: claimedDonor.id,
+            metadata: {
+              originalCreatorId: donor.createdByUserId,
+              newOwnerId: user.id,
+              donorId: claimedDonor.id,
+              transferReason: 'promo_code',
+              promoCode: input.promoCode,
+            },
+          });
+        }
+
         donorProfiles.push(claimedDonor);
       }
     }

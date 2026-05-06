@@ -1,0 +1,37 @@
+%% Notification flow diagram for Rehma backend
+%% Render with a Mermaid viewer (VS Code Mermaid Preview, mermaid-cli, etc.)
+graph LR
+  subgraph Client
+    C[Superadmin Portal<br/>(WebSocket & REST)]
+  end
+  subgraph Backend
+    GW[NotificationsGateway<br/>(/notifications)]
+    NS[NotificationsService]
+    AS[AppStorageService<br/>(in-memory)]
+    MS[Mutation Services<br/>(BloodRequests / BloodDonations / Donors)]
+    REST[NotificationsController<br/>(REST)]
+  end
+
+  C -->|WebSocket connect (auth token)| GW
+  GW -->|verify JWT; join room notifications:{role}:{userId}| GW
+
+  MS -->|mutation (create/update)| NS
+  NS -->|createNotification(payload)| AS
+  AS -->|persist notification| NS
+  NS -->|emit 'notification:new' to room| GW
+  GW -->|socket event 'notification:new'| C
+
+  C -->|GET /notifications| REST
+  REST -->|calls findAll()/unreadCount| NS
+
+  C -->|PATCH /notifications/:id/read| REST
+  REST -->|markAsRead| NS
+  NS -->|mark read in storage| AS
+  NS -->|emit 'notification:updated' & 'notification:unread-count'| GW
+  GW -->|socket events| C
+
+  classDef note fill:#f9f,stroke:#333,stroke-width:1px;
+  subgraph Legend
+    E1[Events: 'notification:new', 'notification:updated', 'notification:unread-count']
+    M1[Client auth: JWT via handshake.auth.token / Authorization header / query.token]
+  end

@@ -2,13 +2,28 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateBloodDonationDto } from './dto/create-blood-donation.dto';
 import { UpdateBloodDonationDto } from './dto/update-blood-donation.dto';
 import { AppStorageService } from '../storage/app-storage.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class BloodDonationsService {
-  constructor(private readonly appStorageService: AppStorageService) {}
+  constructor(
+    private readonly appStorageService: AppStorageService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   create(createBloodDonationDto: CreateBloodDonationDto) {
-    return this.appStorageService.addBloodDonation(createBloodDonationDto);
+    const bloodDonation = this.appStorageService.addBloodDonation(createBloodDonationDto);
+
+    this.notificationsService.notifySuperAdmins({
+      type: 'blood_donation_created',
+      title: 'Blood donation recorded',
+      message: `Donation by ${bloodDonation.donorName} for ${bloodDonation.bloodGroup} was recorded.`,
+      entityType: 'blood_donation',
+      entityId: bloodDonation.id,
+      metadata: { bloodDonation },
+    });
+
+    return bloodDonation;
   }
 
   findAll() {
@@ -29,6 +44,16 @@ export class BloodDonationsService {
     if (!bloodDonation) {
       throw new NotFoundException(`Blood donation with ID ${id} not found`);
     }
+
+    this.notificationsService.notifySuperAdmins({
+      type: 'blood_donation_updated',
+      title: 'Blood donation updated',
+      message: `Donation #${bloodDonation.id} was updated.`,
+      entityType: 'blood_donation',
+      entityId: bloodDonation.id,
+      metadata: { bloodDonation },
+    });
+
     return bloodDonation;
   }
 

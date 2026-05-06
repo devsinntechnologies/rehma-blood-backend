@@ -11,11 +11,17 @@ import { DonorsModule } from './donors/donors.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { HealthModule } from './health/health.module';
 import { MapModule } from './map/map.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { StorageModule } from './storage/storage.module';
+import { ActivityLogsModule } from './activity-logs/activity-logs.module';
+import { DatabaseModule } from './database/database.module';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { ActivityLogsInterceptor } from './shared/interceptors/activity-logs.interceptor';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
+    DatabaseModule,
     AuthModule,
     DonorAuthModule,
     UserAuthModule,
@@ -25,9 +31,17 @@ import { StorageModule } from './storage/storage.module';
     BloodRequestsModule,
     BloodDonationsModule,
     MapModule,
+    NotificationsModule,
     HealthModule,
+    ActivityLogsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: ActivityLogsInterceptor,
+    },
+  ],
 })
 export class AppModule {}

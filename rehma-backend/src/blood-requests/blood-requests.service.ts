@@ -2,10 +2,14 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { CreateBloodRequestDto } from './dto/create-blood-request.dto';
 import { UpdateBloodRequestDto } from './dto/update-blood-request.dto';
 import { AppStorageService } from '../storage/app-storage.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class BloodRequestsService {
-  constructor(private readonly appStorageService: AppStorageService) {}
+  constructor(
+    private readonly appStorageService: AppStorageService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   create(createBloodRequestDto: CreateBloodRequestDto, userId?: number) {
     // Check if user has at least one available donor to create a blood request
@@ -20,10 +24,36 @@ export class BloodRequestsService {
       }
     }
 
-    return this.appStorageService.addBloodRequest({
+    const bloodRequest = this.appStorageService.addBloodRequest({
       ...createBloodRequestDto,
       requesterUserId: userId ?? null,
     });
+
+    const message = `New ${bloodRequest.urgency} blood request for ${bloodRequest.bloodGroup} has been created`;
+    this.notificationsService.notifySuperAdmins({
+      type: 'blood_request_created',
+      title: 'New blood request created',
+      message,
+      entityType: 'blood_request',
+      entityId: bloodRequest.id,
+      metadata: {
+        bloodRequest,
+      },
+    });
+
+    if (bloodRequest.requesterUserId) {
+      this.notificationsService.create({
+        recipient: { role: 'user', userId: bloodRequest.requesterUserId },
+        type: 'blood_request_created',
+        title: 'Blood request received',
+        message: `Your blood request for ${bloodRequest.bloodGroup} has been created successfully.`,
+        entityType: 'blood_request',
+        entityId: bloodRequest.id,
+        metadata: { bloodRequest },
+      });
+    }
+
+    return bloodRequest;
   }
 
   findAll() {
@@ -62,6 +92,28 @@ export class BloodRequestsService {
     if (!bloodRequest) {
       throw new NotFoundException(`Blood request with ID ${id} not found`);
     }
+
+    this.notificationsService.notifySuperAdmins({
+      type: 'blood_request_updated',
+      title: 'Blood request updated',
+      message: `Blood request #${bloodRequest.id} was updated.`,
+      entityType: 'blood_request',
+      entityId: bloodRequest.id,
+      metadata: { bloodRequest },
+    });
+
+    if (bloodRequest.requesterUserId) {
+      this.notificationsService.create({
+        recipient: { role: 'user', userId: bloodRequest.requesterUserId },
+        type: 'blood_request_updated',
+        title: 'Blood request updated',
+        message: `Your blood request #${bloodRequest.id} has been updated.`,
+        entityType: 'blood_request',
+        entityId: bloodRequest.id,
+        metadata: { bloodRequest },
+      });
+    }
+
     return bloodRequest;
   }
 
@@ -70,6 +122,28 @@ export class BloodRequestsService {
     if (!bloodRequest) {
       throw new NotFoundException(`Blood request or donor not found`);
     }
+
+    this.notificationsService.notifySuperAdmins({
+      type: 'blood_request_completed',
+      title: 'Blood request completed',
+      message: `Blood request #${bloodRequest.id} was completed by donor #${donorId}.`,
+      entityType: 'blood_request',
+      entityId: bloodRequest.id,
+      metadata: { bloodRequest, donorId },
+    });
+
+    if (bloodRequest.requesterUserId) {
+      this.notificationsService.create({
+        recipient: { role: 'user', userId: bloodRequest.requesterUserId },
+        type: 'blood_request_completed',
+        title: 'Blood request completed',
+        message: `Your blood request #${bloodRequest.id} has been completed.`,
+        entityType: 'blood_request',
+        entityId: bloodRequest.id,
+        metadata: { bloodRequest, donorId },
+      });
+    }
+
     return bloodRequest;
   }
 

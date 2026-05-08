@@ -69,8 +69,11 @@ export class DonorsService {
     return { donor, promoCode: promo, message: 'Donor profile created successfully' };
   }
 
-  findAll() {
-    return this.appStorageService.listDonors();
+  findAll(userId?: number) {
+    const donors = this.appStorageService.listDonors();
+    if (!userId) return donors;
+
+    return donors.filter((donor) => this.appStorageService.getDonorOwnerUserId(donor) !== userId);
   }
 
   async findOne(id: number) {
@@ -213,6 +216,109 @@ export class DonorsService {
       }
     }
     return Array.from(donorsByPhone.values());
+  }
+
+  getIncomingRequests(userId: number) {
+    return this.appStorageService.listIncomingBloodRequestsForUser(userId);
+  }
+
+  getIncomingRequestById(userId: number, requestId: number) {
+    const bloodRequest = this.appStorageService.getIncomingBloodRequestForUser(userId, requestId);
+    if (!bloodRequest) {
+      throw new NotFoundException(`Incoming blood request with ID ${requestId} not found`);
+    }
+
+    const donor = bloodRequest.requestedToDonorId ? this.appStorageService.getDonor(bloodRequest.requestedToDonorId) : null;
+    const requester = bloodRequest.requesterUserId ? this.appStorageService.getUserById(bloodRequest.requesterUserId) : null;
+
+    return {
+      bloodRequest,
+      donor: donor
+        ? {
+            id: donor.id,
+            fullName: donor.fullName,
+            bloodGroup: donor.bloodGroup,
+            phone: donor.phone,
+            email: donor.email,
+            availabilityStatus: donor.availabilityStatus,
+          }
+        : null,
+      requester: requester
+        ? {
+            id: requester.id,
+            fullName: requester.fullName,
+            email: requester.email,
+            mobileNumber: requester.mobileNumber,
+          }
+        : null,
+    };
+  }
+
+  acceptIncomingRequest(userId: number, requestId: number) {
+    const bloodRequest = this.appStorageService.getIncomingBloodRequestForUser(userId, requestId);
+    if (!bloodRequest) {
+      throw new NotFoundException(`Incoming blood request with ID ${requestId} not found`);
+    }
+
+    const donor = bloodRequest.requestedToDonorId ? this.appStorageService.getDonor(bloodRequest.requestedToDonorId) : undefined;
+    if (!donor) {
+      throw new NotFoundException('Requested donor profile not found');
+    }
+
+    const accepted = this.appStorageService.updateBloodRequest(bloodRequest.id, {
+      status: 'request_accepted',
+      acceptedByDonorId: donor.id,
+      acceptedByDonorName: donor.fullName,
+      acceptedAt: new Date(),
+    });
+
+    if (!accepted) {
+      throw new NotFoundException(`Blood request with ID ${requestId} not found`);
+    }
+
+    const donation = this.appStorageService.upsertBloodDonationForRequest({
+      requestId: accepted.id,
+      donorId: donor.id,
+      donorName: donor.fullName,
+      bloodGroup: accepted.bloodGroup,
+      status: 'donation_pending',
+    });
+
+    const requester = accepted.requesterUserId ? this.appStorageService.getUserById(accepted.requesterUserId) : null;
+
+    if (accepted.requesterUserId != null) {
+      this.notificationsService.create({
+        recipient: { role: 'user', userId: accepted.requesterUserId },
+        type: 'blood_request_updated',
+        title: 'Blood request accepted',
+        message: `Your blood request #${accepted.id} was accepted by donor ${donor.fullName}.`,
+        entityType: 'blood_request',
+        entityId: accepted.id,
+        metadata: { bloodRequest: accepted, donor, donation, requester },
+      });
+    }
+
+    return {
+      bloodRequest: accepted,
+      donor: {
+        id: donor.id,
+        fullName: donor.fullName,
+        bloodGroup: donor.bloodGroup,
+        phone: donor.phone,
+        email: donor.email,
+        availabilityStatus: donor.availabilityStatus,
+      },
+      requester: requester
+        ? {
+            id: requester.id,
+            fullName: requester.fullName,
+            email: requester.email,
+            mobileNumber: requester.mobileNumber,
+          }
+        : null,
+      bloodDonation: donation,
+      message: 'Incoming request accepted',
+    };
   }
 
   disablePromoCode(id: number) {

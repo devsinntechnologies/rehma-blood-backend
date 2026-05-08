@@ -26,8 +26,23 @@ export class BloodDonationsService {
     return bloodDonation;
   }
 
-  findAll() {
-    return this.appStorageService.listBloodDonations();
+  findAll(userId?: number, userRole?: string) {
+    const donations = this.appStorageService.listBloodDonations();
+
+    // Superadmins see all donations
+    if (userRole === 'superadmin') {
+      return donations;
+    }
+
+    // Regular users only see their own donations
+    if (userId) {
+      const userDonors = this.appStorageService.getDonorsByUserId(userId);
+      const userDonorIds = userDonors.map((d) => d.id);
+      return donations.filter((d) => userDonorIds.includes(d.donorId));
+    }
+
+    // No user context = no donations
+    return [];
   }
 
   async findOne(id: number) {

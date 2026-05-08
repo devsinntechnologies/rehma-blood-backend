@@ -1,5 +1,6 @@
-import { IsString, IsOptional } from 'class-validator';
+import { IsString, IsOptional, IsIn } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { BloodDonationRecord } from '../../storage/app-storage.service';
 
 export class UpdateBloodDonationDto {
   @ApiPropertyOptional({ example: 'Ayesha Khan' })
@@ -13,7 +14,7 @@ export class UpdateBloodDonationDto {
   bloodGroup?: string;
 
   @ApiPropertyOptional({ example: 'completed' })
-  @IsString()
+  @IsIn(['request_pending', 'request_accepted', 'donation_pending', 'completed'])
   @IsOptional()
-  status?: string;
+  status?: BloodDonationRecord['status'];
 }

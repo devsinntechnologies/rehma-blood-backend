@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards, Request } from '@nestjs/common';
 import { BloodDonationsService } from './blood-donations.service';
 import { CreateBloodDonationDto } from './dto/create-blood-donation.dto';
 import { UpdateBloodDonationDto } from './dto/update-blood-donation.dto';
@@ -20,9 +20,11 @@ export class BloodDonationsController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'List all blood donations' })
-  findAll() {
-    return this.bloodDonationsService.findAll();
+  @ApiOperation({ summary: 'List all blood donations (authorized user donations or all if superadmin)' })
+  findAll(@Request() req: any) {
+    const userId = req.user?.sub;
+    const userRole = req.user?.role;
+    return this.bloodDonationsService.findAll(userId ? Number(userId) : undefined, userRole);
   }
 
   @Get(':id')

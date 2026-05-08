@@ -53,10 +53,13 @@ export type BloodRequestRecord = {
   notes?: string | null;
   latitude: number;
   longitude: number;
-  status: 'active' | 'accepted' | 'on_the_way' | 'arrived_at_hospital' | 'donation_completed';
+  status: 'active' | 'request_pending' | 'request_accepted' | 'accepted' | 'on_the_way' | 'arrived_at_hospital' | 'donation_completed';
+  requestedToDonorId?: number | null;
+  requestedToDonorName?: string | null;
   acceptedByDonorId?: number | null;
   acceptedByDonorName?: string | null;
   acceptedAt?: Date | null;
+  scheduledDate?: Date | null;
   completedAt?: Date | null;
   fulfilledByDonorId?: number | null;
   fulfilledByDonorName?: string | null;
@@ -66,9 +69,11 @@ export type BloodRequestRecord = {
 
 export type BloodDonationRecord = {
   id: number;
+  requestId?: number | null;
+  donorId: number;
   donorName: string;
   bloodGroup: string;
-  status: string;
+  status: 'request_pending' | 'request_accepted' | 'donation_pending' | 'completed';
   createdAt: Date;
   updatedAt: Date;
 };
@@ -81,6 +86,7 @@ export type NotificationRecord = {
     | 'blood_request_created'
     | 'blood_request_updated'
     | 'blood_request_completed'
+    | 'blood_request_matched'
     | 'blood_donation_created'
     | 'blood_donation_updated'
     | 'donor_created'
@@ -613,9 +619,12 @@ export class AppStorageService implements OnModuleInit {
       latitude: input.latitude,
       longitude: input.longitude,
       status: 'active',
+      requestedToDonorId: null,
+      requestedToDonorName: null,
       acceptedByDonorId: null,
       acceptedByDonorName: null,
       acceptedAt: null,
+      scheduledDate: null,
       completedAt: null,
       fulfilledByDonorId: null,
       fulfilledByDonorName: null,
@@ -676,6 +685,43 @@ export class AppStorageService implements OnModuleInit {
     return bloodRequest;
   }
 
+  getBloodDonationByRequestId(requestId: number): BloodDonationRecord | undefined {
+    return this.bloodDonations.find((bloodDonation) => bloodDonation.requestId === requestId);
+  }
+
+  upsertBloodDonationForRequest(input: {
+    requestId: number;
+    donorId: number;
+    donorName: string;
+    bloodGroup: string;
+    status: BloodDonationRecord['status'];
+  }): BloodDonationRecord {
+    const now = new Date();
+    const existing = this.getBloodDonationByRequestId(input.requestId);
+
+    if (existing) {
+      existing.donorId = input.donorId;
+      existing.donorName = input.donorName;
+      existing.bloodGroup = input.bloodGroup;
+      existing.status = input.status;
+      existing.updatedAt = now;
+      return existing;
+    }
+
+    const bloodDonation: BloodDonationRecord = {
+      id: this.donationId++,
+      requestId: input.requestId,
+      donorId: input.donorId,
+      donorName: input.donorName,
+      bloodGroup: input.bloodGroup,
+      status: input.status,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.bloodDonations.push(bloodDonation);
+    return bloodDonation;
+  }
+
   completeBloodRequest(id: number, donorId: number): BloodRequestRecord | undefined {
     const bloodRequest = this.updateBloodRequestStatus(id, 'donation_completed', donorId);
     if (!bloodRequest) {
@@ -684,13 +730,39 @@ export class AppStorageService implements OnModuleInit {
 
     const donor = this.getDonor(donorId);
     if (donor) {
-      this.addBloodDonation({ donorName: donor.fullName, bloodGroup: bloodRequest.bloodGroup });
+      this.upsertBloodDonationForRequest({
+        requestId: bloodRequest.id,
+        donorId: donor.id,
+        donorName: donor.fullName,
+        bloodGroup: bloodRequest.bloodGroup,
+        status: 'completed',
+      });
     }
     return bloodRequest;
   }
 
   listActiveBloodRequests(): BloodRequestRecord[] {
     return this.listBloodRequests().filter((bloodRequest) => bloodRequest.status === 'active');
+  }
+
+  listIncomingBloodRequestsForUser(userId: number): BloodRequestRecord[] {
+    const donorIds = this.getAllMyDonors(userId)
+      .filter((donor) => donor.isAvailable && donor.availabilityStatus === 'Available')
+      .map((donor) => donor.id);
+
+    return this.listBloodRequests()
+      .filter((bloodRequest) => bloodRequest.status === 'request_pending' && bloodRequest.requestedToDonorId != null && donorIds.includes(bloodRequest.requestedToDonorId))
+      .sort((left, right) => {
+        if (left.urgency !== right.urgency) {
+          return left.urgency === 'urgent' ? -1 : 1;
+        }
+
+        return right.createdAt.getTime() - left.createdAt.getTime();
+      });
+  }
+
+  getIncomingBloodRequestForUser(userId: number, requestId: number): BloodRequestRecord | undefined {
+    return this.listIncomingBloodRequestsForUser(userId).find((bloodRequest) => bloodRequest.id === requestId);
   }
 
   hasOpenBloodRequestForUser(userId: number): boolean {
@@ -716,17 +788,48 @@ export class AppStorageService implements OnModuleInit {
     return true;
   }
 
+  scheduleBloodRequest(requestId: number, userId: number, scheduleDate: Date): BloodRequestRecord | undefined {
+    const bloodRequest = this.getBloodRequest(requestId);
+    if (!bloodRequest) return undefined;
+
+    const donors = this.getDonorsByUserId(userId);
+    const eligible = donors.filter(
+      (d) => d.isAvailable && d.availabilityStatus === 'Available' && d.bloodGroup && d.bloodGroup.toLowerCase() === bloodRequest.bloodGroup.toLowerCase(),
+    );
+
+    if (!eligible.length) return undefined;
+
+    const donor = eligible[0];
+    const now = new Date();
+
+    bloodRequest.acceptedByDonorId = donor.id;
+    bloodRequest.acceptedByDonorName = donor.fullName;
+    bloodRequest.acceptedAt = now;
+    bloodRequest.scheduledDate = scheduleDate;
+    bloodRequest.status = 'accepted';
+    bloodRequest.updatedAt = now;
+
+    return bloodRequest;
+  }
+
   listBloodDonations(): BloodDonationRecord[] {
     return [...this.bloodDonations].sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
   }
 
-  addBloodDonation(input: Pick<BloodDonationRecord, 'donorName' | 'bloodGroup'>): BloodDonationRecord {
+  addBloodDonation(
+    input: Pick<BloodDonationRecord, 'donorId' | 'donorName' | 'bloodGroup'> & {
+      requestId?: number | null;
+      status?: BloodDonationRecord['status'];
+    },
+  ): BloodDonationRecord {
     const now = new Date();
     const bloodDonation: BloodDonationRecord = {
       id: this.donationId++,
+      requestId: input.requestId ?? null,
+      donorId: input.donorId,
       donorName: input.donorName,
       bloodGroup: input.bloodGroup,
-      status: 'completed',
+      status: input.status ?? 'completed',
       createdAt: now,
       updatedAt: now,
     };

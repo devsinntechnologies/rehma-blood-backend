@@ -56,8 +56,13 @@ export class BloodRequestsService {
     return bloodRequest;
   }
 
-  findAll() {
-    return this.appStorageService.listBloodRequests().sort((left, right) => {
+  findAll(excludeUserId?: number) {
+    const all = this.appStorageService.listBloodRequests().filter((br) => {
+      if (!excludeUserId) return true;
+      return br.requesterUserId !== excludeUserId;
+    });
+
+    return all.sort((left, right) => {
       if (left.status !== right.status) {
         return left.status === 'active' ? -1 : 1;
       }
@@ -145,6 +150,197 @@ export class BloodRequestsService {
     }
 
     return bloodRequest;
+  }
+
+  matchToUserDonor(id: number, userId: number) {
+    const bloodRequest = this.appStorageService.getBloodRequest(id);
+    if (!bloodRequest) {
+      throw new NotFoundException(`Blood request with ID ${id} not found`);
+    }
+
+    const donors = this.appStorageService.getDonorsByUserId(userId || 0);
+    const availableDonors = donors.filter((d) => d.isAvailable && d.availabilityStatus === 'Available' && d.bloodGroup);
+    const matchingDonors = availableDonors.filter(
+      (d) => d.isAvailable && d.availabilityStatus === 'Available' && d.bloodGroup && d.bloodGroup.toLowerCase() === bloodRequest.bloodGroup.toLowerCase(),
+    );
+
+    return {
+      requestId: bloodRequest.id,
+      requestBloodGroup: bloodRequest.bloodGroup,
+      hasMatchingAvailableDonor: matchingDonors.length > 0,
+      totalAvailableDonors: availableDonors.length,
+      totalMatchingDonors: matchingDonors.length,
+      matchingDonors: matchingDonors.map((d) => ({
+        id: d.id,
+        fullName: d.fullName,
+        bloodGroup: d.bloodGroup,
+        availabilityStatus: d.availabilityStatus,
+      })),
+    };
+  }
+
+  requestAnyAvailableDonor(id: number, requesterUserId: number) {
+    const bloodRequest = this.appStorageService.getBloodRequest(id);
+    if (!bloodRequest) {
+      throw new NotFoundException(`Blood request with ID ${id} not found`);
+    }
+
+    if (bloodRequest.requesterUserId != null && bloodRequest.requesterUserId !== requesterUserId) {
+      throw new ForbiddenException('You can only request donors for your own blood request');
+    }
+
+    if (bloodRequest.status !== 'active') {
+      throw new ForbiddenException('Only active blood requests can be requested');
+    }
+
+    const matchingDonors = this.appStorageService
+      .listDonors()
+      .filter((donor) => {
+        const donorOwnerUserId = this.appStorageService.getDonorOwnerUserId(donor);
+        return (
+          donorOwnerUserId != null &&
+          donorOwnerUserId !== requesterUserId &&
+          donor.isAvailable &&
+          donor.availabilityStatus === 'Available' &&
+          donor.bloodGroup &&
+          donor.bloodGroup.toLowerCase() === bloodRequest.bloodGroup.toLowerCase()
+        );
+      });
+
+    if (!matchingDonors.length) {
+      throw new ForbiddenException('No available donor matching the blood request');
+    }
+
+    const donor = matchingDonors[0];
+    const donorOwnerUserId = this.appStorageService.getDonorOwnerUserId(donor);
+    const requester = bloodRequest.requesterUserId ? this.appStorageService.getUserById(bloodRequest.requesterUserId) : null;
+
+    const updated = this.appStorageService.updateBloodRequest(id, {
+      status: 'request_pending',
+      requestedToDonorId: donor.id,
+      requestedToDonorName: donor.fullName,
+      acceptedByDonorId: null,
+      acceptedByDonorName: null,
+      acceptedAt: null,
+    });
+
+    if (!updated) {
+      throw new NotFoundException(`Blood request with ID ${id} not found`);
+    }
+
+    if (donorOwnerUserId != null) {
+      this.notificationsService.create({
+        recipient: { role: 'donor', userId: donorOwnerUserId },
+        type: 'system',
+        title: 'Incoming blood request',
+        message: `A blood request for ${bloodRequest.bloodGroup} is waiting for you.`,
+        entityType: 'blood_request',
+        entityId: updated.id,
+        metadata: { bloodRequest: updated, donor },
+      });
+    }
+
+    if (requester) {
+      this.notificationsService.create({
+        recipient: { role: 'user', userId: requesterUserId },
+        type: 'system',
+        title: 'Blood request sent',
+        message: `Your blood request #${updated.id} has been sent to an available donor.`,
+        entityType: 'blood_request',
+        entityId: updated.id,
+        metadata: { bloodRequest: updated, donor, requester },
+      });
+    }
+
+    return {
+      bloodRequest: {
+        id: updated.id,
+        bloodGroup: updated.bloodGroup,
+        requiredUnits: updated.requiredUnits,
+        urgency: updated.urgency,
+        status: updated.status,
+        latitude: updated.latitude,
+        longitude: updated.longitude,
+        createdAt: updated.createdAt,
+      },
+      donor: {
+        id: donor.id,
+        fullName: donor.fullName,
+        bloodGroup: donor.bloodGroup,
+        phone: donor.phone,
+        email: donor.email,
+        availabilityStatus: donor.availabilityStatus,
+      },
+      requester: requester
+        ? {
+            id: requester.id,
+            fullName: requester.fullName,
+            email: requester.email,
+            mobileNumber: requester.mobileNumber,
+          }
+        : null,
+      message: 'Blood request sent to an available donor',
+    };
+  }
+
+  scheduleBloodRequest(id: number, userId: number, scheduleDate: Date) {
+    const bloodRequest = this.appStorageService.getBloodRequest(id);
+    if (!bloodRequest) {
+      throw new NotFoundException(`Blood request with ID ${id} not found`);
+    }
+
+    if (bloodRequest.status !== 'active') {
+      throw new ForbiddenException('Only active blood requests can be scheduled');
+    }
+
+    const updated = this.appStorageService.scheduleBloodRequest(id, userId, scheduleDate);
+    if (!updated) {
+      throw new ForbiddenException('No available donor matching the blood request');
+    }
+
+    // Fetch donor and requester details for response
+    const donor = this.appStorageService.getDonor(updated.acceptedByDonorId!);
+    const requester = updated.requesterUserId ? this.appStorageService.getUserById(updated.requesterUserId) : null;
+
+    this.notificationsService.notifySuperAdmins({
+      type: 'blood_request_matched',
+      title: 'Blood donation scheduled',
+      message: `Blood request #${updated.id} scheduled for ${scheduleDate.toDateString()} with donor ${updated.acceptedByDonorName}.`,
+      entityType: 'blood_request',
+      entityId: updated.id,
+      metadata: { bloodRequest: updated, donor, requester },
+    });
+
+    if (updated.requesterUserId) {
+      this.notificationsService.create({
+        recipient: { role: 'user', userId: updated.requesterUserId },
+        type: 'blood_request_matched',
+        title: 'Donation scheduled for your request',
+        message: `Your blood request #${updated.id} has been scheduled for ${scheduleDate.toDateString()} with donor ${updated.acceptedByDonorName}.`,
+        entityType: 'blood_request',
+        entityId: updated.id,
+        metadata: { bloodRequest: updated, donor, requester },
+      });
+    }
+
+    return {
+      bloodRequest: updated,
+      donor: {
+        id: donor?.id,
+        fullName: donor?.fullName,
+        bloodGroup: donor?.bloodGroup,
+        phone: donor?.phone,
+        email: donor?.email,
+      },
+      requester: requester
+        ? {
+            id: requester.id,
+            fullName: requester.fullName,
+            email: requester.email,
+            mobileNumber: requester.mobileNumber,
+          }
+        : null,
+    };
   }
 
   async remove(id: number) {

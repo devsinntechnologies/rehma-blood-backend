@@ -23,14 +23,33 @@ export class DonorsController {
 
   @Get()
   @ApiOperation({ summary: 'List all donors' })
-  findAll() {
-    return this.donorsService.findAll();
+  findAll(@Request() req: any) {
+    const userId = req.user?.sub;
+    return this.donorsService.findAll(userId ? Number(userId) : undefined);
   }
 
   @Get('my-created')
   @ApiOperation({ summary: 'List all donors for the authenticated user (created by user + user own donor profile)' })
   getMyCreatedDonors(@Request() req: any) {
     return this.donorsService.getCreatedDonors(Number(req.user.sub));
+  }
+
+  @Get('incoming-requests')
+  @ApiOperation({ summary: 'List incoming blood requests for the authenticated donor' })
+  getIncomingRequests(@Request() req: any) {
+    return this.donorsService.getIncomingRequests(Number(req.user.sub));
+  }
+
+  @Get('incoming-requests/:id')
+  @ApiOperation({ summary: 'Get an incoming blood request by ID for the authenticated donor' })
+  getIncomingRequestById(@Param('id') id: string, @Request() req: any) {
+    return this.donorsService.getIncomingRequestById(Number(req.user.sub), Number(id));
+  }
+
+  @Patch('incoming-requests/:id/accept')
+  @ApiOperation({ summary: 'Accept an incoming blood request for the authenticated donor' })
+  acceptIncomingRequest(@Param('id') id: string, @Request() req: any) {
+    return this.donorsService.acceptIncomingRequest(Number(req.user.sub), Number(id));
   }
 
   @Get(':id/promo')

@@ -4,6 +4,7 @@ import { BloodRequestsService } from './blood-requests.service';
 import { CreateBloodRequestDto } from './dto/create-blood-request.dto';
 import { CompleteBloodRequestDto } from './dto/complete-blood-request.dto';
 import { UpdateBloodRequestDto } from './dto/update-blood-request.dto';
+import { ScheduleBloodRequestDto } from './dto/schedule-blood-request.dto';
 import { JwtAuthGuard } from '../shared/guards/jwt-auth.guard';
 
 @ApiTags('Blood Requests')
@@ -23,8 +24,9 @@ export class BloodRequestsController {
 
   @Get()
   @ApiOperation({ summary: 'List all requests, urgent first' })
-  findAll() {
-    return this.bloodRequestsService.findAll();
+  findAll(@Request() req: any) {
+    const userId = req.user?.sub;
+    return this.bloodRequestsService.findAll(userId ? Number(userId) : undefined);
   }
 
   @Get('active')
@@ -57,6 +59,29 @@ export class BloodRequestsController {
   @ApiBody({ type: CompleteBloodRequestDto })
   complete(@Param('id') id: string, @Body() body: CompleteBloodRequestDto) {
     return this.bloodRequestsService.complete(Number(id), Number(body.donorId));
+  }
+
+  @Get(':id/match')
+  @ApiOperation({ summary: "Check if this blood request matches authenticated user's available donors" })
+  matchToMyDonor(@Param('id') id: string, @Request() req: any) {
+    const userId = req.user?.sub;
+    return this.bloodRequestsService.matchToUserDonor(Number(id), Number(userId));
+  }
+
+  @Post(':id/request')
+  @ApiOperation({ summary: 'Request an available donor for this blood request' })
+  requestAnyAvailableDonor(@Param('id') id: string, @Request() req: any) {
+    const userId = req.user?.sub;
+    return this.bloodRequestsService.requestAnyAvailableDonor(Number(id), Number(userId));
+  }
+
+  @Post('schedule')
+  @ApiOperation({ summary: 'Schedule a donation using requestId and scheduleDate from request body' })
+  @ApiBody({ type: ScheduleBloodRequestDto })
+  schedule(@Request() req: any, @Body() dto: ScheduleBloodRequestDto) {
+    const userId = req.user?.sub;
+    const scheduleDate = new Date(dto.scheduleDate);
+    return this.bloodRequestsService.scheduleBloodRequest(Number(dto.requestId), Number(userId), scheduleDate);
   }
 
   @Delete(':id')

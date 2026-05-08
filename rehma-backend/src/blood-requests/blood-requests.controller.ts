@@ -29,6 +29,12 @@ export class BloodRequestsController {
     return this.bloodRequestsService.findAll(userId ? Number(userId) : undefined);
   }
 
+  @Get('my-requests')
+  @ApiOperation({ summary: 'List all blood requests created by the authenticated user' })
+  findMyRequests(@Request() req: any) {
+    return this.bloodRequestsService.findMyRequests(Number(req.user.sub));
+  }
+
   @Get('active')
   @ApiOperation({ summary: 'List active requests' })
   findActive() {

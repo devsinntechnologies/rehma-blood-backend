@@ -115,6 +115,7 @@ AB- → Can donate to AB+, AB-
 ```
 POST   /blood-requests                  Create request
 GET    /blood-requests                  List all requests (except own)
+GET    /blood-requests/my-requests      List only your own blood requests
 GET    /blood-requests/:id              Get single request
 GET    /blood-requests/:id/match        Check matching donors
 POST   /blood-requests/:id/request      Request a donor

@@ -595,6 +595,32 @@ export class AppStorageService implements OnModuleInit {
     return [...this.bloodRequests].sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
   }
 
+  listBloodRequestsByRequesterUserId(requesterUserId: number): BloodRequestRecord[] {
+    const statusPriority: Record<BloodRequestRecord['status'], number> = {
+      active: 0,
+      request_pending: 1,
+      request_accepted: 2,
+      accepted: 3,
+      on_the_way: 4,
+      arrived_at_hospital: 5,
+      donation_completed: 6,
+    };
+
+    return this.bloodRequests
+      .filter((bloodRequest) => bloodRequest.requesterUserId === requesterUserId)
+      .sort((left, right) => {
+        if (statusPriority[left.status] !== statusPriority[right.status]) {
+          return statusPriority[left.status] - statusPriority[right.status];
+        }
+
+        if (left.urgency !== right.urgency) {
+          return left.urgency === 'urgent' ? -1 : 1;
+        }
+
+        return right.createdAt.getTime() - left.createdAt.getTime();
+      });
+  }
+
   addBloodRequest(input: {
     requesterUserId?: number | null;
     requesterName?: string | null;

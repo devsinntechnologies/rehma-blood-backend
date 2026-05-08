@@ -75,6 +75,10 @@ export class BloodRequestsService {
     });
   }
 
+  findMyRequests(userId: number) {
+    return this.appStorageService.listBloodRequestsByRequesterUserId(userId);
+  }
+
   async findOne(id: number) {
     const bloodRequest = this.appStorageService.getBloodRequest(id);
     if (!bloodRequest) {

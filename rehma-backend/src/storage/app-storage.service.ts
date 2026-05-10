@@ -178,9 +178,28 @@ export class AppStorageService implements OnModuleInit {
   }
 
   getDonorsByUserId(userId: number): DonorRecord[] {
-    return this.donors
+    const list = this.donors
       .filter((donor) => donor.userId === userId || donor.linkedUserId === userId || donor.claimedByUserId === userId)
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+    list.forEach((d) => this.restoreAvailabilityIfEligible(d));
+    return list;
+  }
+
+  private restoreAvailabilityIfEligible(donor: DonorRecord) {
+    if (!donor || !donor.lastDonationDate) return;
+    try {
+      const last = new Date(donor.lastDonationDate);
+      const now = new Date();
+      const ms = now.getTime() - last.getTime();
+      const days = Math.floor(ms / (1000 * 60 * 60 * 24));
+      if (days >= 60) {
+        donor.isAvailable = true;
+        donor.availabilityStatus = 'Available';
+        donor.updatedAt = new Date();
+      }
+    } catch (e) {
+      // ignore parsing errors
+    }
   }
 
   getDonorOwnerUserId(donor: DonorRecord): number | null {
@@ -333,7 +352,9 @@ export class AppStorageService implements OnModuleInit {
   }
 
   listDonors(): DonorRecord[] {
-    return [...this.donors].sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+    const list = [...this.donors].sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+    list.forEach((d) => this.restoreAvailabilityIfEligible(d));
+    return list;
   }
 
   addDonor(
@@ -362,15 +383,19 @@ export class AppStorageService implements OnModuleInit {
   }
 
   getAllDonorsByLinkedUserId(linkedUserId: number): DonorRecord[] {
-    return this.donors
+    const list = this.donors
       .filter((donor) => donor.linkedUserId === linkedUserId)
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+    list.forEach((d) => this.restoreAvailabilityIfEligible(d));
+    return list;
   }
 
   getDonorsByCreatedByUserId(createdByUserId: number): DonorRecord[] {
-    return this.donors
+    const list = this.donors
       .filter((donor) => donor.createdByUserId === createdByUserId)
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+    list.forEach((d) => this.restoreAvailabilityIfEligible(d));
+    return list;
   }
 
   getAllMyDonors(userId: number): DonorRecord[] {
@@ -387,7 +412,9 @@ export class AppStorageService implements OnModuleInit {
       return true;
     });
 
-    return unique.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+    const sorted = unique.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+    sorted.forEach((d) => this.restoreAvailabilityIfEligible(d));
+    return sorted;
   }
 
   disablePromoCode(donorId: number): DonorRecord | undefined {
@@ -551,7 +578,9 @@ export class AppStorageService implements OnModuleInit {
   }
 
   getDonor(id: number): DonorRecord | undefined {
-    return this.donors.find((donor) => donor.id === id);
+    const donor = this.donors.find((donor) => donor.id === id);
+    if (donor) this.restoreAvailabilityIfEligible(donor);
+    return donor;
   }
 
   updateDonor(id: number, partial: Partial<Omit<DonorRecord, 'id' | 'createdAt' | 'updatedAt'>>): DonorRecord | undefined {
@@ -763,6 +792,12 @@ export class AppStorageService implements OnModuleInit {
         bloodGroup: bloodRequest.bloodGroup,
         status: 'completed',
       });
+      // mark donor as recently donated / unavailable and record last donation date
+      const now = new Date();
+      donor.lastDonationDate = now.toISOString();
+      donor.isAvailable = false;
+      donor.availabilityStatus = 'Recently Donated';
+      donor.updatedAt = now;
     }
     return bloodRequest;
   }
@@ -819,9 +854,13 @@ export class AppStorageService implements OnModuleInit {
     if (!bloodRequest) return undefined;
 
     const donors = this.getDonorsByUserId(userId);
-    const eligible = donors.filter(
-      (d) => d.isAvailable && d.availabilityStatus === 'Available' && d.bloodGroup && d.bloodGroup.toLowerCase() === bloodRequest.bloodGroup.toLowerCase(),
-    );
+    const normalize = (s?: string | null) => (s ? s.replace(/\s+/g, '').toLowerCase() : '');
+    const reqBg = normalize(bloodRequest.bloodGroup);
+    const eligible = donors.filter((d) => {
+      const bg = normalize(d.bloodGroup);
+      const availability = d.availabilityStatus ? String(d.availabilityStatus).toLowerCase() : '';
+      return d.isAvailable && availability === 'available' && bg && bg === reqBg;
+    });
 
     if (!eligible.length) return undefined;
 
@@ -870,7 +909,21 @@ export class AppStorageService implements OnModuleInit {
   updateBloodDonation(id: number, partial: Partial<Omit<BloodDonationRecord, 'id' | 'createdAt' | 'updatedAt'>>): BloodDonationRecord | undefined {
     const bloodDonation = this.getBloodDonation(id);
     if (!bloodDonation) return undefined;
-    Object.assign(bloodDonation, partial, { updatedAt: new Date() });
+    const now = new Date();
+    const prevStatus = bloodDonation.status;
+    Object.assign(bloodDonation, partial, { updatedAt: now });
+
+    // If donation moved to completed, mark donor as recently donated
+    if (partial.status === 'completed' && prevStatus !== 'completed') {
+      const donor = this.getDonor(bloodDonation.donorId);
+      if (donor) {
+        donor.lastDonationDate = now.toISOString();
+        donor.isAvailable = false;
+        donor.availabilityStatus = 'Recently Donated';
+        donor.updatedAt = now;
+      }
+    }
+
     return bloodDonation;
   }
 

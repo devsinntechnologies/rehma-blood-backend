@@ -853,7 +853,7 @@ export class AppStorageService implements OnModuleInit {
     const bloodRequest = this.getBloodRequest(requestId);
     if (!bloodRequest) return undefined;
 
-    const donors = this.getDonorsByUserId(userId);
+    const donors = this.listDonors().filter((donor) => this.getDonorOwnerUserId(donor) === userId);
     const normalize = (s?: string | null) => (s ? s.replace(/\s+/g, '').toLowerCase() : '');
     const reqBg = normalize(bloodRequest.bloodGroup);
     const eligible = donors.filter((d) => {

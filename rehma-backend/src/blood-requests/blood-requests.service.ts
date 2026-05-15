@@ -201,9 +201,10 @@ export class BloodRequestsService {
       .listDonors()
       .filter((donor) => {
         const donorOwnerUserId = this.appStorageService.getDonorOwnerUserId(donor);
+        const ownerUserId = donorOwnerUserId ?? donor.createdByUserId ?? null;
         return (
-          donorOwnerUserId != null &&
-          donorOwnerUserId !== requesterUserId &&
+          ownerUserId != null &&
+          ownerUserId !== requesterUserId &&
           donor.isAvailable &&
           donor.availabilityStatus === 'Available' &&
           donor.bloodGroup &&
@@ -216,7 +217,8 @@ export class BloodRequestsService {
     }
 
     const donor = matchingDonors[0];
-    const donorOwnerUserId = this.appStorageService.getDonorOwnerUserId(donor);
+    let donorOwnerUserId = this.appStorageService.getDonorOwnerUserId(donor);
+    donorOwnerUserId = donorOwnerUserId ?? donor.createdByUserId ?? null;
     const requester = bloodRequest.requesterUserId ? this.appStorageService.getUserById(bloodRequest.requesterUserId) : null;
 
     const updated = this.appStorageService.updateBloodRequest(id, {

@@ -34,13 +34,7 @@ export class DonorsService {
       }
     }
 
-    // Avoid upsert behavior on create when email already exists.
-    if (createDonorDto.email) {
-      const existingDonor = this.appStorageService.getDonorByEmail(createDonorDto.email);
-      if (existingDonor) {
-        throw new ConflictException('Donor with this email already exists');
-      }
-    }
+    // Only enforce phone uniqueness on create; allow email to be non-unique/upserted later.
 
     // generate a collision-safe promo code
     const generateCode = () => {

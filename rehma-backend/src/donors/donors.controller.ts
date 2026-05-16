@@ -16,7 +16,7 @@ export class DonorsController {
   @Post()
   @ApiOperation({ summary: 'Create or register a donor profile' })
   @ApiBody({ type: CreateDonorDto })
-  @ApiConflictResponse({ description: 'Donor with this phone number or email already exists' })
+  @ApiConflictResponse({ description: 'Donor with this phone number already exists' })
   create(@Request() req: any, @Body() createDonorDto: CreateDonorDto) {
     const userId = req.user?.sub;
     return this.donorsService.create(createDonorDto, userId);

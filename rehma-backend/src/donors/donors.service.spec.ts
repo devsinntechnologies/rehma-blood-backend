@@ -95,35 +95,5 @@ describe('DonorsService - create', () => {
 
     expect(storage.listDonors().length).toBe(before);
   });
-
-  it('throws conflict and does not create a donor when email already exists', () => {
-    storage.addDonor({
-      fullName: 'Existing Email',
-      email: 'existing-email@example.com',
-      phone: '+92 300 7654321',
-      bloodGroup: 'O+',
-      latitude: 31.5204,
-      longitude: 74.3587,
-      createdByUserId: 1,
-      isAvailable: true,
-    });
-
-    const before = storage.listDonors().length;
-
-    expect(() =>
-      service.create(
-        {
-          fullName: 'Duplicate Email',
-          email: 'existing-email@example.com',
-          phone: '+92 300 0000000',
-          bloodGroup: 'AB+',
-          latitude: 31.5204,
-          longitude: 74.3587,
-        },
-        2,
-      ),
-    ).toThrow(new ConflictException('Donor with this email already exists'));
-
-    expect(storage.listDonors().length).toBe(before);
-  });
+  
 });

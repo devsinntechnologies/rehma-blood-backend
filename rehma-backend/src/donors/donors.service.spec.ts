@@ -1,7 +1,6 @@
 import { AppStorageService } from '../storage/app-storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { DonorsService } from './donors.service';
-import { ConflictException } from '@nestjs/common';
 
 class StubGateway {
   emitNotification() {}
@@ -50,50 +49,4 @@ describe('DonorsService - getCreatedDonors', () => {
     expect(result).toHaveLength(2);
     expect(result.map((donor) => donor.id).sort((left, right) => left - right)).toEqual([first.id, second.id]);
   });
-});
-
-describe('DonorsService - create', () => {
-  let storage: AppStorageService;
-  let notifications: NotificationsService;
-  let service: DonorsService;
-
-  beforeEach(async () => {
-    storage = new AppStorageService();
-    await storage.onModuleInit();
-    const gateway = new StubGateway();
-    notifications = new NotificationsService(storage as any, gateway as any);
-    service = new DonorsService(storage as any, notifications as any);
-  });
-
-  it('throws conflict and does not create a donor when phone already exists', () => {
-    storage.addDonor({
-      fullName: 'Existing Phone',
-      email: 'existing-phone@example.com',
-      phone: '+92 300 1234567',
-      bloodGroup: 'A+',
-      latitude: 31.5204,
-      longitude: 74.3587,
-      createdByUserId: 1,
-      isAvailable: true,
-    });
-
-    const before = storage.listDonors().length;
-
-    expect(() =>
-      service.create(
-        {
-          fullName: 'Duplicate Phone',
-          email: 'new-email@example.com',
-          phone: '+92 300 1234567',
-          bloodGroup: 'B+',
-          latitude: 31.5204,
-          longitude: 74.3587,
-        },
-        2,
-      ),
-    ).toThrow(new ConflictException('Donor with this phone number already exists'));
-
-    expect(storage.listDonors().length).toBe(before);
-  });
-  
 });

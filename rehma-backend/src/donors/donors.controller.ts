@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards, Request } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags, ApiBody, ApiConflictResponse } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags, ApiBody } from '@nestjs/swagger';
 import { DonorsService } from './donors.service';
 import { CreateDonorDto } from './dto/create-donor.dto';
 import { UpdateDonorDto } from './dto/update-donor.dto';
@@ -16,7 +16,6 @@ export class DonorsController {
   @Post()
   @ApiOperation({ summary: 'Create or register a donor profile' })
   @ApiBody({ type: CreateDonorDto })
-  @ApiConflictResponse({ description: 'Donor with this phone number already exists' })
   create(@Request() req: any, @Body() createDonorDto: CreateDonorDto) {
     const userId = req.user?.sub;
     return this.donorsService.create(createDonorDto, userId);

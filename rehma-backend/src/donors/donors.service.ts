@@ -34,8 +34,6 @@ export class DonorsService {
       }
     }
 
-    // Only enforce phone uniqueness on create; allow email to be non-unique/upserted later.
-
     // generate a collision-safe promo code
     const generateCode = () => {
       const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';

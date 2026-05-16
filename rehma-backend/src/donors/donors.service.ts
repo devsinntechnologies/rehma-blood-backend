@@ -34,6 +34,14 @@ export class DonorsService {
       }
     }
 
+    // Avoid upsert behavior on create when email already exists.
+    if (createDonorDto.email) {
+      const existingDonor = this.appStorageService.getDonorByEmail(createDonorDto.email);
+      if (existingDonor) {
+        throw new ConflictException('Donor with this email already exists');
+      }
+    }
+
     // generate a collision-safe promo code
     const generateCode = () => {
       const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -208,14 +216,24 @@ export class DonorsService {
 
   getCreatedDonors(userId: number) {
     const allDonors = this.appStorageService.getAllMyDonors(userId);
-    // Return only one donor per phone number (merge duplicate donors with same phone)
-    const donorsByPhone = new Map();
+    // Merge only real duplicate phone numbers; keep phone-less donors as separate records.
+    const donorsByPhone = new Map<string, typeof allDonors[number]>();
+    const result: typeof allDonors = [];
+
     for (const donor of allDonors) {
-      if (!donorsByPhone.has(donor.phone)) {
-        donorsByPhone.set(donor.phone, donor);
+      const phone = donor.phone?.trim();
+      if (!phone) {
+        result.push(donor);
+        continue;
+      }
+
+      if (!donorsByPhone.has(phone)) {
+        donorsByPhone.set(phone, donor);
+        result.push(donor);
       }
     }
-    return Array.from(donorsByPhone.values());
+
+    return result;
   }
 
   getIncomingRequests(userId: number) {

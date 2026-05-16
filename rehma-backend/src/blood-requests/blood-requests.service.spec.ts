@@ -130,4 +130,55 @@ describe('BloodRequestsService - requestAnyAvailableDonor', () => {
 
     expect(() => service.scheduleBloodRequest(req.id, 1, scheduleDate)).toThrow('No available donor matching the blood request');
   });
+
+  it('findMyScheduledRequests returns only scheduled blood requests for the authenticated user', () => {
+    storage.addDonor({
+      fullName: 'Scheduled Donor',
+      email: 'scheduled@example.com',
+      phone: '+92 300 3333333',
+      bloodGroup: 'O+',
+      latitude: 31.5204,
+      longitude: 74.3587,
+      createdByUserId: 1,
+      isAvailable: true,
+    });
+
+    const scheduled = storage.addBloodRequest({
+      requesterUserId: 7,
+      bloodGroup: 'O+',
+      requiredUnits: 1,
+      urgency: 'urgent',
+      latitude: 31.52,
+      longitude: 74.35,
+    });
+
+    const unscheduled = storage.addBloodRequest({
+      requesterUserId: 7,
+      bloodGroup: 'A+',
+      requiredUnits: 1,
+      urgency: 'normal',
+      latitude: 31.52,
+      longitude: 74.35,
+    });
+
+    storage.scheduleBloodRequest(scheduled.id, 1, new Date('2026-05-20T10:00:00.000Z'));
+
+    const otherUserScheduled = storage.addBloodRequest({
+      requesterUserId: 99,
+      bloodGroup: 'O+',
+      requiredUnits: 1,
+      urgency: 'normal',
+      latitude: 31.52,
+      longitude: 74.35,
+    });
+    storage.scheduleBloodRequest(otherUserScheduled.id, 1, new Date('2026-05-21T10:00:00.000Z'));
+
+    const result = service.findMyScheduledRequests(7);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe(scheduled.id);
+    expect(result[0].scheduledDate).toBeInstanceOf(Date);
+    expect(result.some((bloodRequest) => bloodRequest.id === unscheduled.id)).toBe(false);
+    expect(result.some((bloodRequest) => bloodRequest.id === otherUserScheduled.id)).toBe(false);
+  });
 });

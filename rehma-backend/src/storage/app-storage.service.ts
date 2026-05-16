@@ -650,6 +650,21 @@ export class AppStorageService implements OnModuleInit {
       });
   }
 
+  listScheduledBloodRequestsByRequesterUserId(requesterUserId: number): BloodRequestRecord[] {
+    return this.bloodRequests
+      .filter((bloodRequest) => bloodRequest.requesterUserId === requesterUserId && bloodRequest.scheduledDate != null)
+      .sort((left, right) => {
+        const leftScheduledAt = left.scheduledDate?.getTime() ?? 0;
+        const rightScheduledAt = right.scheduledDate?.getTime() ?? 0;
+
+        if (leftScheduledAt !== rightScheduledAt) {
+          return leftScheduledAt - rightScheduledAt;
+        }
+
+        return right.createdAt.getTime() - left.createdAt.getTime();
+      });
+  }
+
   addBloodRequest(input: {
     requesterUserId?: number | null;
     requesterName?: string | null;

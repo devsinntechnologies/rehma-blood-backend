@@ -35,6 +35,12 @@ export class BloodRequestsController {
     return this.bloodRequestsService.findMyRequests(Number(req.user.sub));
   }
 
+  @Get('my-scheduled-requests')
+  @ApiOperation({ summary: 'List all scheduled blood requests created by the authenticated user' })
+  findMyScheduledRequests(@Request() req: any) {
+    return this.bloodRequestsService.findMyScheduledRequests(Number(req.user.sub));
+  }
+
   @Get('active')
   @ApiOperation({ summary: 'List active requests' })
   findActive() {

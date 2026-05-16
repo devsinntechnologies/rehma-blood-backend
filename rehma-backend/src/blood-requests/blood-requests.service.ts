@@ -79,6 +79,10 @@ export class BloodRequestsService {
     return this.appStorageService.listBloodRequestsByRequesterUserId(userId);
   }
 
+  findMyScheduledRequests(userId: number) {
+    return this.appStorageService.listScheduledBloodRequestsByRequesterUserId(userId);
+  }
+
   async findOne(id: number) {
     const bloodRequest = this.appStorageService.getBloodRequest(id);
     if (!bloodRequest) {

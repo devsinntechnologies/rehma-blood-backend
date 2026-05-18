@@ -197,8 +197,8 @@ export class BloodRequestsService {
       throw new ForbiddenException('You can only request donors for your own blood request');
     }
 
-    if (bloodRequest.status !== 'active') {
-      throw new ForbiddenException('Only active blood requests can be requested');
+    if (bloodRequest.status !== 'active' && bloodRequest.status !== 'request_pending') {
+      throw new ForbiddenException('Only active or pending blood requests can be requested');
     }
 
     const matchingDonors = this.appStorageService
@@ -299,8 +299,8 @@ export class BloodRequestsService {
       throw new NotFoundException(`Blood request with ID ${id} not found`);
     }
 
-    if (bloodRequest.status !== 'active') {
-      throw new ForbiddenException('Only active blood requests can be scheduled');
+    if (bloodRequest.status !== 'active' && bloodRequest.status !== 'request_pending') {
+      throw new ForbiddenException('Only active or pending blood requests can be scheduled');
     }
 
     const updated = this.appStorageService.scheduleBloodRequest(id, userId, scheduleDate);

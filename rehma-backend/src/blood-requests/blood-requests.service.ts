@@ -80,7 +80,77 @@ export class BloodRequestsService {
   }
 
   findMyScheduledRequests(userId: number) {
-    return this.appStorageService.listScheduledBloodRequestsByRequesterUserId(userId);
+    const scheduled = this.appStorageService.listScheduledBloodRequestsByRequesterUserId(userId);
+
+    return scheduled.map((bloodRequest) => {
+      const donor = bloodRequest.acceptedByDonorId
+        ? this.appStorageService.getDonor(bloodRequest.acceptedByDonorId)
+        : undefined;
+
+      const requester = bloodRequest.requesterUserId
+        ? this.appStorageService.getUserById(bloodRequest.requesterUserId)
+        : null;
+
+      return {
+        bloodRequest,
+        donor: donor
+          ? {
+              id: donor.id,
+              fullName: donor.fullName,
+              bloodGroup: donor.bloodGroup,
+              phone: donor.phone,
+              email: donor.email,
+              availabilityStatus: donor.availabilityStatus,
+              city: donor.city,
+            }
+          : null,
+        requester: requester
+          ? {
+              id: requester.id,
+              fullName: requester.fullName,
+              email: requester.email,
+              mobileNumber: requester.mobileNumber,
+            }
+          : null,
+      };
+    });
+  }
+
+  findAllScheduledDonations() {
+    const scheduled = this.appStorageService.listAllScheduledBloodRequests();
+
+    return scheduled.map((bloodRequest) => {
+      const donor = bloodRequest.acceptedByDonorId
+        ? this.appStorageService.getDonor(bloodRequest.acceptedByDonorId)
+        : undefined;
+
+      const requester = bloodRequest.requesterUserId
+        ? this.appStorageService.getUserById(bloodRequest.requesterUserId)
+        : null;
+
+      return {
+        bloodRequest,
+        donor: donor
+          ? {
+              id: donor.id,
+              fullName: donor.fullName,
+              bloodGroup: donor.bloodGroup,
+              phone: donor.phone,
+              email: donor.email,
+              availabilityStatus: donor.availabilityStatus,
+              city: donor.city,
+            }
+          : null,
+        requester: requester
+          ? {
+              id: requester.id,
+              fullName: requester.fullName,
+              email: requester.email,
+              mobileNumber: requester.mobileNumber,
+            }
+          : null,
+      };
+    });
   }
 
   async findOne(id: number) {

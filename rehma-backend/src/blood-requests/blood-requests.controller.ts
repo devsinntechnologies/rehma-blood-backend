@@ -53,6 +53,12 @@ export class BloodRequestsController {
     return this.bloodRequestsService.findUrgent();
   }
 
+  @Get('scheduled-donations')
+  @ApiOperation({ summary: 'List all scheduled donations with requester and donor details (any status)' })
+  findAllScheduledDonations() {
+    return this.bloodRequestsService.findAllScheduledDonations();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get blood request by ID' })
   findOne(@Param('id') id: string) {

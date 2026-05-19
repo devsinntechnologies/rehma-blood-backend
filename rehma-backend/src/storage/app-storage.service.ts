@@ -665,6 +665,21 @@ export class AppStorageService implements OnModuleInit {
       });
   }
 
+  listAllScheduledBloodRequests(): BloodRequestRecord[] {
+    return this.bloodRequests
+      .filter((bloodRequest) => bloodRequest.scheduledDate != null)
+      .sort((left, right) => {
+        const leftScheduledAt = left.scheduledDate?.getTime() ?? 0;
+        const rightScheduledAt = right.scheduledDate?.getTime() ?? 0;
+
+        if (leftScheduledAt !== rightScheduledAt) {
+          return leftScheduledAt - rightScheduledAt;
+        }
+
+        return right.createdAt.getTime() - left.createdAt.getTime();
+      });
+  }
+
   addBloodRequest(input: {
     requesterUserId?: number | null;
     requesterName?: string | null;

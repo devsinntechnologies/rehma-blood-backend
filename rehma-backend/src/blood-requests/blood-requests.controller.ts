@@ -1,5 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards, Request } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags, ApiBody } from '@nestjs/swagger';
+import { DonorCompleteDto } from './dto/donor-complete.dto';
+import { ConfirmReceiptDto } from './dto/confirm-receipt.dto';
+
 import { BloodRequestsService } from './blood-requests.service';
 import { CreateBloodRequestDto } from './dto/create-blood-request.dto';
 import { CompleteBloodRequestDto } from './dto/complete-blood-request.dto';
@@ -12,7 +15,7 @@ import { JwtAuthGuard } from '../shared/guards/jwt-auth.guard';
 @Controller('blood-requests')
 @UseGuards(JwtAuthGuard)
 export class BloodRequestsController {
-  constructor(private readonly bloodRequestsService: BloodRequestsService) {}
+  constructor(private readonly bloodRequestsService: BloodRequestsService) { }
 
   @Post()
   @ApiOperation({ summary: 'Create a blood request' })
@@ -77,6 +80,22 @@ export class BloodRequestsController {
   @ApiBody({ type: CompleteBloodRequestDto })
   complete(@Param('id') id: string, @Body() body: CompleteBloodRequestDto) {
     return this.bloodRequestsService.complete(Number(id), Number(body.donorId));
+  }
+
+  @Patch(':id/donor-complete')
+  @ApiOperation({ summary: 'Donor marks donation as completed' })
+  @ApiBody({ type: DonorCompleteDto })
+  donorComplete(@Param('id') id: string, @Request() req: any, @Body() dto: DonorCompleteDto) {
+    const donorId = dto.donorId ?? Number(req.user?.sub);
+    return this.bloodRequestsService.donorComplete(Number(id), donorId);
+  }
+
+  @Post(':id/confirm-receipt')
+  @ApiOperation({ summary: 'Requester confirms receipt of blood' })
+  @ApiBody({ type: ConfirmReceiptDto })
+  confirmReceipt(@Param('id') id: string, @Request() req: any, @Body() dto: ConfirmReceiptDto) {
+    const requesterId = Number(req.user?.sub);
+    return this.bloodRequestsService.confirmReceipt(Number(id), dto.received, requesterId);
   }
 
   @Get(':id/match')

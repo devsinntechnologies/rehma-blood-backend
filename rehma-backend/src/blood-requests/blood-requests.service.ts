@@ -201,6 +201,8 @@ export class BloodRequestsService {
   }
 
   complete(id: number, donorId: number) {
+    // existing implementation unchanged
+
     const bloodRequest = this.appStorageService.completeBloodRequest(id, donorId);
     if (!bloodRequest) {
       throw new NotFoundException(`Blood request or donor not found`);
@@ -229,6 +231,35 @@ export class BloodRequestsService {
 
     return bloodRequest;
   }
+
+  // New method: donor marks donation as completed
+  donorComplete(id: number, donorId: number) {
+    const bloodRequest = this.appStorageService.getBloodRequest(id);
+    if (!bloodRequest) {
+      throw new NotFoundException(`Blood request with ID ${id} not found`);
+    }
+    if (bloodRequest.acceptedByDonorId !== donorId) {
+      throw new ForbiddenException('Donor does not match the accepted donor for this request');
+    }
+    // Update status to completed
+    return this.appStorageService.updateBloodRequestStatus(id, 'donation_completed', donorId);
+  }
+
+  // New method: requester confirms receipt
+  confirmReceipt(id: number, received: boolean, requesterId: number) {
+    const bloodRequest = this.appStorageService.getBloodRequest(id);
+    if (!bloodRequest) {
+      throw new NotFoundException(`Blood request with ID ${id} not found`);
+    }
+    if (bloodRequest.requesterUserId !== requesterId) {
+      throw new ForbiddenException('Only the requester can confirm receipt');
+    }
+    const status = received ? 'donation_completed' : 'active';
+    // Update request status accordingly
+    return this.appStorageService.updateBloodRequestStatus(id, status);
+  }
+
+
 
   matchToUserDonor(id: number, userId: number) {
     const bloodRequest = this.appStorageService.getBloodRequest(id);

@@ -70,10 +70,9 @@ export class DonorsService {
   }
 
   findAll(userId?: number) {
-    const donors = this.appStorageService.listDonors();
-    if (!userId) return donors;
+    if (!userId) return [];
 
-    return donors.filter((donor) => this.appStorageService.getDonorOwnerUserId(donor) !== userId);
+    return this.appStorageService.getDonorsByUserId(userId);
   }
 
   async findOne(id: number) {

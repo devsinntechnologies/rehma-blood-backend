@@ -83,18 +83,18 @@ export type NotificationRecord = {
   recipientRole: 'superadmin' | 'donor' | 'user';
   recipientUserId: number;
   type:
-    | 'blood_request_created'
-    | 'blood_request_updated'
-    | 'blood_request_completed'
-    | 'blood_request_matched'
-    | 'blood_donation_created'
-    | 'blood_donation_updated'
-    | 'donor_created'
-    | 'donor_updated'
-    | 'donor_status_changed'
-    | 'donor_ownership_transferred'
-    | 'promo_updated'
-    | 'system';
+  | 'blood_request_created'
+  | 'blood_request_updated'
+  | 'blood_request_completed'
+  | 'blood_request_matched'
+  | 'blood_donation_created'
+  | 'blood_donation_updated'
+  | 'donor_created'
+  | 'donor_updated'
+  | 'donor_status_changed'
+  | 'donor_ownership_transferred'
+  | 'promo_updated'
+  | 'system';
   title: string;
   message: string;
   entityType?: string | null;
@@ -402,7 +402,7 @@ export class AppStorageService implements OnModuleInit {
     // Get both created donors and user's own donor profile
     const created = this.donors.filter((donor) => donor.createdByUserId === userId);
     const owned = this.donors.filter((donor) => donor.linkedUserId === userId);
-    
+
     // Merge and remove duplicates (if a donor is both created and owned)
     const allDonors = [...created, ...owned];
     const seen = new Set<number>();

@@ -176,9 +176,9 @@ describe('BloodRequestsService - requestAnyAvailableDonor', () => {
     const result = service.findMyScheduledRequests(7);
 
     expect(result).toHaveLength(1);
-    expect(result[0].id).toBe(scheduled.id);
-    expect(result[0].scheduledDate).toBeInstanceOf(Date);
-    expect(result.some((bloodRequest) => bloodRequest.id === unscheduled.id)).toBe(false);
-    expect(result.some((bloodRequest) => bloodRequest.id === otherUserScheduled.id)).toBe(false);
+    expect(result[0].bloodRequest.id).toBe(scheduled.id);
+    expect(result[0].bloodRequest.scheduledDate).toBeInstanceOf(Date);
+    expect(result.some((item) => item.bloodRequest.id === unscheduled.id)).toBe(false);
+    expect(result.some((item) => item.bloodRequest.id === otherUserScheduled.id)).toBe(false);
   });
 });

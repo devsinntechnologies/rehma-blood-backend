@@ -179,7 +179,7 @@ export class AppStorageService implements OnModuleInit {
 
   getDonorsByUserId(userId: number): DonorRecord[] {
     const list = this.donors
-      .filter((donor) => donor.userId === userId || donor.linkedUserId === userId || donor.claimedByUserId === userId)
+      .filter((donor) => donor.userId === userId || donor.linkedUserId === userId || donor.claimedByUserId === userId || donor.createdByUserId === userId)
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
     list.forEach((d) => this.restoreAvailabilityIfEligible(d));
     return list;

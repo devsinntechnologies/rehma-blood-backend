@@ -93,6 +93,8 @@ export type NotificationRecord = {
   | 'donor_updated'
   | 'donor_status_changed'
   | 'donor_ownership_transferred'
+  | 'chat_message'
+  | 'chat_conversation_created'
   | 'promo_updated'
   | 'system';
   title: string;
@@ -129,6 +131,68 @@ export type ResetTokenRecord = {
   used: boolean;
 };
 
+export type ChatParticipantRecord = {
+  role: 'superadmin' | 'donor' | 'user';
+  userId: number;
+  displayName: string;
+  avatarUrl?: string | null;
+  unreadCount: number;
+  lastReadMessageId?: number | null;
+  joinedAt: Date;
+  isTyping: boolean;
+  archived: boolean;
+  muted: boolean;
+};
+
+export type ChatConversationRecord = {
+  id: number;
+  type: 'direct' | 'group' | 'request' | 'support';
+  title?: string | null;
+  contextType?: string | null;
+  contextId?: number | null;
+  createdByRole: 'superadmin' | 'donor' | 'user';
+  createdByUserId: number;
+  participants: ChatParticipantRecord[];
+  lastMessageId?: number | null;
+  lastMessagePreview?: string | null;
+  lastMessageAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type ChatAttachmentRecord = {
+  id: number;
+  messageId: number;
+  originalName: string;
+  fileName: string;
+  mimeType: string;
+  kind: 'image' | 'video' | 'audio' | 'file';
+  size: number;
+  url: string;
+  previewUrl?: string | null;
+  durationMs?: number | null;
+  width?: number | null;
+  height?: number | null;
+  createdAt: Date;
+};
+
+export type ChatMessageRecord = {
+  id: number;
+  conversationId: number;
+  senderRole: 'superadmin' | 'donor' | 'user';
+  senderUserId: number;
+  senderName: string;
+  body?: string | null;
+  messageType: 'text' | 'voice' | 'image' | 'video' | 'file' | 'mixed';
+  replyToMessageId?: number | null;
+  status: 'sent' | 'deleted';
+  attachments: ChatAttachmentRecord[];
+  createdAt: Date;
+  updatedAt: Date;
+  editedAt?: Date | null;
+  deletedAt?: Date | null;
+};
+
 @Injectable()
 export class AppStorageService implements OnModuleInit {
   private superAdmins: SuperAdminRecord[] = [];
@@ -136,6 +200,9 @@ export class AppStorageService implements OnModuleInit {
   private bloodRequests: BloodRequestRecord[] = [];
   private bloodDonations: BloodDonationRecord[] = [];
   private notifications: NotificationRecord[] = [];
+  private chatConversations: ChatConversationRecord[] = [];
+  private chatMessages: ChatMessageRecord[] = [];
+  private chatAttachments: ChatAttachmentRecord[] = [];
   private users: UserRecord[] = [];
   private resetTokens: ResetTokenRecord[] = [];
 
@@ -143,6 +210,9 @@ export class AppStorageService implements OnModuleInit {
   private requestId = 1;
   private donationId = 1;
   private userId = 1;
+  private chatConversationId = 1;
+  private chatMessageId = 1;
+  private chatAttachmentId = 1;
 
   async onModuleInit(): Promise<void> {
     const passwordHash = await bcrypt.hash(process.env.SUPERADMIN_PASSWORD ?? 'ChangeMe123!', 10);
@@ -1029,6 +1099,281 @@ export class AppStorageService implements OnModuleInit {
     return this.notifications.filter(
       (notification) => notification.recipientRole === recipientRole && notification.recipientUserId === recipientUserId && !notification.isRead,
     ).length;
+  }
+
+  private getAccountDisplayName(role: 'superadmin' | 'donor' | 'user', userId: number): string {
+    if (role === 'superadmin') {
+      return this.getSuperAdminById(userId)?.fullName ?? `Superadmin #${userId}`;
+    }
+
+    if (role === 'donor') {
+      return this.getDonor(userId)?.fullName ?? `Donor #${userId}`;
+    }
+
+    return this.getUserById(userId)?.fullName ?? `User #${userId}`;
+  }
+
+  private findChatParticipant(
+    conversation: ChatConversationRecord,
+    role: 'superadmin' | 'donor' | 'user',
+    userId: number,
+  ): ChatParticipantRecord | undefined {
+    return conversation.participants.find((participant) => participant.role === role && participant.userId === userId);
+  }
+
+  listChatConversations(recipientRole: 'superadmin' | 'donor' | 'user', recipientUserId: number): ChatConversationRecord[] {
+    return [...this.chatConversations]
+      .filter((conversation) => this.findChatParticipant(conversation, recipientRole, recipientUserId))
+      .sort((left, right) => {
+        const leftTime = left.lastMessageAt?.getTime() ?? left.createdAt.getTime();
+        const rightTime = right.lastMessageAt?.getTime() ?? right.createdAt.getTime();
+        return rightTime - leftTime;
+      });
+  }
+
+  getChatConversation(id: number): ChatConversationRecord | undefined {
+    return this.chatConversations.find((conversation) => conversation.id === id);
+  }
+
+  createChatConversation(input: {
+    type?: ChatConversationRecord['type'];
+    title?: string | null;
+    contextType?: string | null;
+    contextId?: number | null;
+    createdByRole: 'superadmin' | 'donor' | 'user';
+    createdByUserId: number;
+    participants: Array<{ role: 'superadmin' | 'donor' | 'user'; userId: number }>;
+  }): ChatConversationRecord {
+    const participantMap = new Map<string, { role: 'superadmin' | 'donor' | 'user'; userId: number }>();
+    input.participants.forEach((participant) => participantMap.set(`${participant.role}:${participant.userId}`, participant));
+    participantMap.set(`${input.createdByRole}:${input.createdByUserId}`, { role: input.createdByRole, userId: input.createdByUserId });
+
+    const participants = [...participantMap.values()].map((participant) => ({
+      role: participant.role,
+      userId: participant.userId,
+      displayName: this.getAccountDisplayName(participant.role, participant.userId),
+      avatarUrl: null,
+      unreadCount: 0,
+      lastReadMessageId: null,
+      joinedAt: new Date(),
+      isTyping: false,
+      archived: false,
+      muted: false,
+    }));
+
+    const type = input.type ?? 'direct';
+    if (type === 'direct') {
+      const participantKey = participants.map((participant) => `${participant.role}:${participant.userId}`).sort().join('|');
+      const existingConversation = this.chatConversations.find((conversation) => {
+        if (conversation.type !== 'direct') return false;
+        if ((conversation.contextType ?? null) !== (input.contextType ?? null)) return false;
+        if ((conversation.contextId ?? null) !== (input.contextId ?? null)) return false;
+
+        const existingKey = conversation.participants.map((participant) => `${participant.role}:${participant.userId}`).sort().join('|');
+        return existingKey === participantKey;
+      });
+
+      if (existingConversation) {
+        return existingConversation;
+      }
+    }
+
+    const now = new Date();
+    const conversation: ChatConversationRecord = {
+      id: this.chatConversationId++,
+      type,
+      title: input.title ?? null,
+      contextType: input.contextType ?? null,
+      contextId: input.contextId ?? null,
+      createdByRole: input.createdByRole,
+      createdByUserId: input.createdByUserId,
+      participants,
+      lastMessageId: null,
+      lastMessagePreview: null,
+      lastMessageAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    this.chatConversations.push(conversation);
+    return conversation;
+  }
+
+  listChatMessages(conversationId: number): ChatMessageRecord[] {
+    return [...this.chatMessages]
+      .filter((message) => message.conversationId === conversationId)
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+  }
+
+  getChatMessage(id: number): ChatMessageRecord | undefined {
+    return this.chatMessages.find((message) => message.id === id);
+  }
+
+  addChatMessage(input: {
+    conversationId: number;
+    senderRole: 'superadmin' | 'donor' | 'user';
+    senderUserId: number;
+    senderName: string;
+    body?: string | null;
+    messageType?: ChatMessageRecord['messageType'];
+    replyToMessageId?: number | null;
+    attachments?: Array<Omit<ChatAttachmentRecord, 'id' | 'messageId' | 'createdAt'>>;
+  }): ChatMessageRecord | undefined {
+    const conversation = this.getChatConversation(input.conversationId);
+    if (!conversation) {
+      return undefined;
+    }
+
+    const participant = this.findChatParticipant(conversation, input.senderRole, input.senderUserId);
+    if (!participant) {
+      return undefined;
+    }
+
+    const now = new Date();
+    const attachments: ChatAttachmentRecord[] = (input.attachments ?? []).map((attachment) => {
+      const createdAttachment: ChatAttachmentRecord = {
+        id: this.chatAttachmentId++,
+        messageId: this.chatMessageId,
+        originalName: attachment.originalName,
+        fileName: attachment.fileName,
+        mimeType: attachment.mimeType,
+        kind: attachment.kind,
+        size: attachment.size,
+        url: attachment.url || `/chat/attachments/${this.chatAttachmentId - 1}`,
+        previewUrl: attachment.previewUrl ?? null,
+        durationMs: attachment.durationMs ?? null,
+        width: attachment.width ?? null,
+        height: attachment.height ?? null,
+        createdAt: now,
+      };
+      this.chatAttachments.push(createdAttachment);
+      return createdAttachment;
+    });
+
+    const message: ChatMessageRecord = {
+      id: this.chatMessageId++,
+      conversationId: input.conversationId,
+      senderRole: input.senderRole,
+      senderUserId: input.senderUserId,
+      senderName: input.senderName,
+      body: input.body ?? null,
+      messageType: input.messageType ?? (attachments.length > 0 ? 'mixed' : 'text'),
+      replyToMessageId: input.replyToMessageId ?? null,
+      status: 'sent',
+      attachments,
+      createdAt: now,
+      updatedAt: now,
+      editedAt: null,
+      deletedAt: null,
+    };
+
+    this.chatMessages.push(message);
+
+    conversation.lastMessageId = message.id;
+    conversation.lastMessagePreview = message.body?.trim() || attachments[0]?.originalName || 'Attachment';
+    conversation.lastMessageAt = now;
+    conversation.updatedAt = now;
+
+    conversation.participants.forEach((chatParticipant) => {
+      if (chatParticipant.role === input.senderRole && chatParticipant.userId === input.senderUserId) {
+        chatParticipant.lastReadMessageId = message.id;
+        chatParticipant.unreadCount = 0;
+        chatParticipant.isTyping = false;
+        return;
+      }
+
+      chatParticipant.unreadCount += 1;
+      chatParticipant.isTyping = false;
+    });
+
+    participant.lastReadMessageId = message.id;
+    participant.unreadCount = 0;
+    participant.isTyping = false;
+
+    return message;
+  }
+
+  markChatConversationRead(
+    conversationId: number,
+    recipientRole: 'superadmin' | 'donor' | 'user',
+    recipientUserId: number,
+    lastReadMessageId?: number | null,
+  ): ChatConversationRecord | undefined {
+    const conversation = this.getChatConversation(conversationId);
+    if (!conversation) {
+      return undefined;
+    }
+
+    const participant = this.findChatParticipant(conversation, recipientRole, recipientUserId);
+    if (!participant) {
+      return undefined;
+    }
+
+    participant.unreadCount = 0;
+    participant.lastReadMessageId = lastReadMessageId ?? conversation.lastMessageId ?? null;
+    participant.isTyping = false;
+    participant.archived = false;
+    conversation.updatedAt = new Date();
+
+    return conversation;
+  }
+
+  setChatParticipantTyping(
+    conversationId: number,
+    recipientRole: 'superadmin' | 'donor' | 'user',
+    recipientUserId: number,
+    isTyping: boolean,
+  ): ChatConversationRecord | undefined {
+    const conversation = this.getChatConversation(conversationId);
+    if (!conversation) {
+      return undefined;
+    }
+
+    const participant = this.findChatParticipant(conversation, recipientRole, recipientUserId);
+    if (!participant) {
+      return undefined;
+    }
+
+    participant.isTyping = isTyping;
+    conversation.updatedAt = new Date();
+    return conversation;
+  }
+
+  updateChatParticipantState(
+    conversationId: number,
+    recipientRole: 'superadmin' | 'donor' | 'user',
+    recipientUserId: number,
+    partial: Partial<Pick<ChatParticipantRecord, 'archived' | 'muted'>>,
+  ): ChatConversationRecord | undefined {
+    const conversation = this.getChatConversation(conversationId);
+    if (!conversation) {
+      return undefined;
+    }
+
+    const participant = this.findChatParticipant(conversation, recipientRole, recipientUserId);
+    if (!participant) {
+      return undefined;
+    }
+
+    Object.assign(participant, partial);
+    conversation.updatedAt = new Date();
+    return conversation;
+  }
+
+  getChatUnreadCount(recipientRole: 'superadmin' | 'donor' | 'user', recipientUserId: number): number {
+    return this.chatConversations.reduce((count, conversation) => {
+      const participant = this.findChatParticipant(conversation, recipientRole, recipientUserId);
+      return count + (participant?.unreadCount ?? 0);
+    }, 0);
+  }
+
+  getChatAttachment(id: number): ChatAttachmentRecord | undefined {
+    return this.chatAttachments.find((attachment) => attachment.id === id);
+  }
+
+  listChatParticipants(conversationId: number): ChatParticipantRecord[] {
+    const conversation = this.getChatConversation(conversationId);
+    return conversation ? [...conversation.participants] : [];
   }
 
   stats(): { donors: number; bloodRequests: number; donations: number } {

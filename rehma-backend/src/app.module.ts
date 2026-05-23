@@ -12,6 +12,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { HealthModule } from './health/health.module';
 import { MapModule } from './map/map.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { ChatModule } from './chat/chat.module';
 import { StorageModule } from './storage/storage.module';
 import { ActivityLogsModule } from './activity-logs/activity-logs.module';
 import { DatabaseModule } from './database/database.module';
@@ -32,6 +33,7 @@ import { ActivityLogsInterceptor } from './shared/interceptors/activity-logs.int
     BloodDonationsModule,
     MapModule,
     NotificationsModule,
+    ChatModule,
     HealthModule,
     ActivityLogsModule,
   ],

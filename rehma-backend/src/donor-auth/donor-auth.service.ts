@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { AppStorageService } from '../storage/app-storage.service';
@@ -16,7 +16,7 @@ export class DonorAuthService {
   async register(dto: RegisterDonorDto) {
     const existingDonor = this.appStorageService.getDonorByEmail(dto.email);
     if (existingDonor?.passwordHash) {
-      throw new BadRequestException('Donor already registered with this email');
+      throw new ConflictException('This email is already registered. Please use a different email.');
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);

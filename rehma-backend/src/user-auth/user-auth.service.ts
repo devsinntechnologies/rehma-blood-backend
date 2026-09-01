@@ -17,9 +17,12 @@ export class UserAuthService {
 
   async register(input: RegisterUserDto): Promise<{ accessToken: string; user: Partial<UserRecord>; donorProfiles: unknown[] }> {
     const existingUserByEmail = this.storageService.getUserByEmail(input.email);
+    if (existingUserByEmail) {
+      throw new ConflictException('This email is already registered. Please use a different email.');
+    }
     const existingUserByPhone = this.storageService.getUserByMobileNumber(input.mobileNumber);
-    if (existingUserByEmail || existingUserByPhone) {
-      throw new ConflictException('User already exists');
+    if (existingUserByPhone) {
+      throw new ConflictException('This phone number is already registered. Please use a different phone number.');
     }
     const passwordHash = await bcrypt.hash(input.password, 10);
 
@@ -54,7 +57,7 @@ export class UserAuthService {
 
     const phoneMatchedDonor = this.storageService.getDonorByPhone(input.mobileNumber);
     if (phoneMatchedDonor?.isVerifiedAccount) {
-      throw new ConflictException('Donor with this phone number already exists');
+      throw new ConflictException('This phone number is already registered. Please use a different phone number.');
     }
 
     const primaryDonor = phoneMatchedDonor

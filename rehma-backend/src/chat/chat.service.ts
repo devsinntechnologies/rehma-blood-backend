@@ -196,11 +196,18 @@ export class ChatService {
     };
   }
 
-  getAttachment(attachmentId: number) {
+  getAttachment(attachmentId: number, account: ChatAccount) {
     const attachment = this.storageService.getChatAttachment(attachmentId);
     if (!attachment) {
       throw new NotFoundException(`Attachment with ID ${attachmentId} not found`);
     }
+
+    const message = this.storageService.getChatMessage(attachment.messageId);
+    if (!message) {
+      throw new NotFoundException(`Attachment with ID ${attachmentId} not found`);
+    }
+    // Only members of the conversation may download its files.
+    this.requireConversationMember(message.conversationId, account);
 
     const filePath = join(this.uploadsDir, attachment.fileName);
     if (!existsSync(filePath)) {
@@ -208,6 +215,11 @@ export class ChatService {
     }
 
     return { attachment, filePath };
+  }
+
+  /** Every participant of a conversation as an account, for per-recipient socket fan-out. */
+  listParticipantAccounts(conversationId: number): ChatAccount[] {
+    return this.storageService.listChatParticipants(conversationId).map(({ role, userId }) => ({ role, userId }));
   }
 
   getConversationParticipants(conversationId: number, account: ChatAccount): ChatParticipantRecord[] {

@@ -1,10 +1,13 @@
-import { Controller, Get, Query } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../shared/guards/jwt-auth.guard';
 import { NearbyDonorsQueryDto } from './dto/nearby-donors-query.dto';
 import { MapService } from './map.service';
 
 @ApiTags('Map')
+@ApiBearerAuth('jwt')
 @Controller('map')
+@UseGuards(JwtAuthGuard)
 export class MapController {
   constructor(private readonly mapService: MapService) {}
 

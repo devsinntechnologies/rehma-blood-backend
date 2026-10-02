@@ -25,7 +25,7 @@ export class DonorsController {
   @ApiOperation({ summary: 'List all donors' })
   findAll(@Request() req: any) {
     const userId = req.user?.sub;
-    return this.donorsService.findAll(userId ? Number(userId) : undefined);
+    return this.donorsService.findAll(userId ? Number(userId) : undefined, req.user?.role);
   }
 
   @Get('my-created')

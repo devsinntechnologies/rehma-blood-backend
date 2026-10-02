@@ -18,8 +18,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
       message = exceptionResponse;
     } else if (exceptionResponse && typeof exceptionResponse === 'object') {
       const payload = exceptionResponse as Record<string, unknown>;
-      message = typeof payload.message === 'string' ? payload.message : message;
-      details = payload.details ?? payload.errors ?? null;
+      if (typeof payload.message === 'string') {
+        message = payload.message;
+      } else if (Array.isArray(payload.message) && payload.message.length > 0) {
+        // ValidationPipe reports one message per failed constraint.
+        message = payload.message.join(', ');
+        details = payload.message;
+      }
+      details = payload.details ?? payload.errors ?? details;
     } else if (exception instanceof Error) {
       message = exception.message;
     }

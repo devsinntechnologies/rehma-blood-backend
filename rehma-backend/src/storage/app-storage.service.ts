@@ -193,6 +193,12 @@ export type ChatMessageRecord = {
   deletedAt?: Date | null;
 };
 
+/** Strips credentials before a donor record leaves the API. */
+export function toPublicDonor<T extends DonorRecord>(donor: T): Omit<T, 'passwordHash'> {
+  const { passwordHash: _passwordHash, ...rest } = donor;
+  return rest;
+}
+
 @Injectable()
 export class AppStorageService implements OnModuleInit {
   private superAdmins: SuperAdminRecord[] = [];
@@ -256,7 +262,8 @@ export class AppStorageService implements OnModuleInit {
   }
 
   private restoreAvailabilityIfEligible(donor: DonorRecord) {
-    if (!donor || !donor.lastDonationDate) return;
+    // Only lift the automatic post-donation cooldown; never override a status someone set on purpose.
+    if (!donor || !donor.lastDonationDate || donor.availabilityStatus !== 'Recently Donated') return;
     try {
       const last = new Date(donor.lastDonationDate);
       const now = new Date();
@@ -811,6 +818,7 @@ export class AppStorageService implements OnModuleInit {
 
     const donor = donorId ? this.getDonor(donorId) : undefined;
     const now = new Date();
+    const wasCompleted = bloodRequest.status === 'donation_completed';
 
     bloodRequest.status = status;
 
@@ -834,10 +842,32 @@ export class AppStorageService implements OnModuleInit {
         bloodRequest.fulfilledByDonorId = bloodRequest.acceptedByDonorId;
         bloodRequest.fulfilledByDonorName = bloodRequest.acceptedByDonorName ?? undefined;
       }
+      if (!wasCompleted) {
+        this.recordCompletedDonation(bloodRequest, now);
+      }
     }
 
     bloodRequest.updatedAt = now;
     return bloodRequest;
+  }
+
+  // Keeps the donation record and the donor profile in step with a request that just completed.
+  private recordCompletedDonation(bloodRequest: BloodRequestRecord, now: Date) {
+    const donor = bloodRequest.fulfilledByDonorId ? this.getDonor(bloodRequest.fulfilledByDonorId) : undefined;
+    if (!donor) return;
+
+    this.upsertBloodDonationForRequest({
+      requestId: bloodRequest.id,
+      donorId: donor.id,
+      donorName: donor.fullName,
+      bloodGroup: bloodRequest.bloodGroup,
+      status: 'completed',
+    });
+    donor.lastDonationDate = now.toISOString();
+    donor.isAvailable = false;
+    donor.availabilityStatus = 'Recently Donated';
+    donor.totalDonations = (donor.totalDonations ?? 0) + 1;
+    donor.updatedAt = now;
   }
 
   getBloodDonationByRequestId(requestId: number): BloodDonationRecord | undefined {
@@ -878,28 +908,8 @@ export class AppStorageService implements OnModuleInit {
   }
 
   completeBloodRequest(id: number, donorId: number): BloodRequestRecord | undefined {
-    const bloodRequest = this.updateBloodRequestStatus(id, 'donation_completed', donorId);
-    if (!bloodRequest) {
-      return undefined;
-    }
-
-    const donor = this.getDonor(donorId);
-    if (donor) {
-      this.upsertBloodDonationForRequest({
-        requestId: bloodRequest.id,
-        donorId: donor.id,
-        donorName: donor.fullName,
-        bloodGroup: bloodRequest.bloodGroup,
-        status: 'completed',
-      });
-      // mark donor as recently donated / unavailable and record last donation date
-      const now = new Date();
-      donor.lastDonationDate = now.toISOString();
-      donor.isAvailable = false;
-      donor.availabilityStatus = 'Recently Donated';
-      donor.updatedAt = now;
-    }
-    return bloodRequest;
+    // updateBloodRequestStatus records the donation and marks the donor as recently donated.
+    return this.updateBloodRequestStatus(id, 'donation_completed', donorId);
   }
 
   listActiveBloodRequests(): BloodRequestRecord[] {
@@ -959,7 +969,7 @@ export class AppStorageService implements OnModuleInit {
     const eligible = donors.filter((d) => {
       const bg = normalize(d.bloodGroup);
       const availability = d.availabilityStatus ? String(d.availabilityStatus).toLowerCase() : '';
-      return d.isAvailable && availability === 'available' && bg && bg === reqBg;
+      return d.isActive && d.isAvailable && availability === 'available' && bg && bg === reqBg;
     });
 
     if (!eligible.length) return undefined;
@@ -1020,6 +1030,7 @@ export class AppStorageService implements OnModuleInit {
         donor.lastDonationDate = now.toISOString();
         donor.isAvailable = false;
         donor.availabilityStatus = 'Recently Donated';
+        donor.totalDonations = (donor.totalDonations ?? 0) + 1;
         donor.updatedAt = now;
       }
     }

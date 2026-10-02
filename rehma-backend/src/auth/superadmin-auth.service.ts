@@ -61,6 +61,12 @@ export class SuperAdminAuthService {
 
     const resetToken = this.appStorageService.generateResetToken(email, userType);
 
+    if (userType === 'superadmin') {
+      // Returning this token would let anyone who knows the admin email take over the account.
+      // It must be delivered out-of-band (email) once a mailer is wired up.
+      return { message: 'If an account exists with this email, a password reset link will be sent.' };
+    }
+
     // In a real application, you would send this token via email
     // For testing purposes, we return the token in the response
     return {

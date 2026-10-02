@@ -2,11 +2,12 @@ import { Controller, Get, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service';
 import { JwtAuthGuard } from '../shared/guards/jwt-auth.guard';
+import { SuperAdminRoleGuard } from '../shared/guards/superadmin-role.guard';
 
 @ApiTags('Superadmin Dashboard')
 @ApiBearerAuth('jwt')
 @Controller('superadmin')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, SuperAdminRoleGuard)
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 

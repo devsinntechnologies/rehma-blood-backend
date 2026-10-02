@@ -2,7 +2,7 @@ import { ConflictException, Injectable, NotFoundException, ForbiddenException } 
 import { CreateDonorDto } from './dto/create-donor.dto';
 import { UpdateDonorDto } from './dto/update-donor.dto';
 import { UpdateDonorAvailabilityDto } from './dto/update-donor-availability.dto';
-import { AppStorageService } from '../storage/app-storage.service';
+import { AppStorageService, toPublicDonor } from '../storage/app-storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
@@ -69,13 +69,21 @@ export class DonorsService {
     return { donor, promoCode: promo, message: 'Donor profile created successfully' };
   }
 
-  findAll(userId?: number) {
+  findAll(userId?: number, userRole?: string) {
+    // Superadmin and user IDs share the same number space, so the role must be checked before the ID.
+    if (userRole === 'superadmin') {
+      return this.appStorageService.listDonors().map(toPublicDonor);
+    }
     if (!userId) return [];
 
-    return this.appStorageService.getDonorsByUserId(userId);
+    return this.appStorageService.getDonorsByUserId(userId).map(toPublicDonor);
   }
 
   async findOne(id: number) {
+    return toPublicDonor(this.getDonorOrThrow(id));
+  }
+
+  private getDonorOrThrow(id: number) {
     const donor = this.appStorageService.getDonor(id);
     if (!donor) {
       throw new NotFoundException(`Donor with ID ${id} not found`);
@@ -84,7 +92,7 @@ export class DonorsService {
   }
 
   async update(id: number, updateDonorDto: UpdateDonorDto, userId?: number, userRole?: string) {
-    await this.findOne(id);
+    this.getDonorOrThrow(id);
     if (!this.canManageDonor(id, userId, userRole)) {
       throw new ForbiddenException('Only the donor owner or superadmin can update this donor');
     }
@@ -115,7 +123,7 @@ export class DonorsService {
       });
     }
 
-    return donor;
+    return toPublicDonor(donor);
   }
 
   updateAvailability(id: number, isAvailable: boolean) {
@@ -170,11 +178,11 @@ export class DonorsService {
       });
     }
 
-    return { donor: updated, message: `Donor availability status updated to ${updateDto.availabilityStatus}` };
+    return { donor: toPublicDonor(updated), message: `Donor availability status updated to ${updateDto.availabilityStatus}` };
   }
 
   async remove(id: number, userId?: number, userRole?: string) {
-    const donor = await this.findOne(id);
+    const donor = this.getDonorOrThrow(id);
     if (!this.canManageDonor(id, userId, userRole)) {
       throw new ForbiddenException('Only the donor owner or superadmin can delete this donor');
     }
@@ -224,7 +232,7 @@ export class DonorsService {
       }
     }
 
-    return result;
+    return result.map(toPublicDonor);
   }
 
   getIncomingRequests(userId: number) {
@@ -345,7 +353,7 @@ export class DonorsService {
       metadata: { donor },
     });
 
-    return { donor, message: 'Promo code disabled' };
+    return { donor: toPublicDonor(donor), message: 'Promo code disabled' };
   }
 
   regeneratePromoCode(id: number) {
@@ -363,7 +371,7 @@ export class DonorsService {
       metadata: { donor: result.donor, newPromoCode: result.newPromoCode },
     });
 
-    return result;
+    return { ...result, donor: toPublicDonor(result.donor) };
   }
 
   getPromoCodeInfo(id: number) {

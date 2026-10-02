@@ -142,10 +142,24 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   broadcastMessage(conversationId: number, message: unknown): void {
     this.server.to(this.conversationRoom(conversationId)).emit('chat:message', message);
+    this.syncParticipants(conversationId);
   }
 
   broadcastConversation(conversation: { id: number }): void {
-    this.server.to(this.conversationRoom(conversation.id)).emit('chat:conversation-updated', conversation);
+    this.syncParticipants(conversation.id);
+  }
+
+  /**
+   * Sends each participant their own view of the conversation (unread count, archived, muted)
+   * and their total unread count, on their personal room. Participants who don't have the
+   * conversation open still see new threads, previews and badges update live.
+   */
+  private syncParticipants(conversationId: number): void {
+    for (const account of this.chatService.listParticipantAccounts(conversationId)) {
+      const room = this.userRoom(account.role, account.userId);
+      this.server.to(room).emit('chat:conversation-updated', this.chatService.getConversation(conversationId, account));
+      this.server.to(room).emit('chat:unread-count', { unreadCount: this.chatService.getUnreadCount(account).unreadCount });
+    }
   }
 
   broadcastUnreadCount(role: 'superadmin' | 'donor' | 'user', userId: number, unreadCount: number): void {

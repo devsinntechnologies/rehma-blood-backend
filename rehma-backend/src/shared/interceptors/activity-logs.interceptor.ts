@@ -3,6 +3,32 @@ import { Observable } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
 import { ActivityLogsService, CreateActivityLogDto } from '../../activity-logs/activity-logs.service';
 
+const SENSITIVE_KEYS = new Set([
+  'password',
+  'newpassword',
+  'oldpassword',
+  'currentpassword',
+  'passwordhash',
+  'token',
+  'accesstoken',
+  'refreshtoken',
+  'resettoken',
+]);
+
+/** Masks credentials so they are never persisted in (or shown from) the audit log. */
+function redact(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redact);
+  if (value && typeof value === 'object' && value.constructor === Object) {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+        key,
+        SENSITIVE_KEYS.has(key.toLowerCase()) && entry != null ? '[REDACTED]' : redact(entry),
+      ]),
+    );
+  }
+  return value;
+}
+
 @Injectable()
 export class ActivityLogsInterceptor implements NestInterceptor {
   constructor(private readonly activityLogsService: ActivityLogsService) {}
@@ -23,7 +49,7 @@ export class ActivityLogsInterceptor implements NestInterceptor {
     let requestBody = '';
     if (request.body && Object.keys(request.body).length > 0) {
       try {
-        requestBody = JSON.stringify(request.body).substring(0, 2000);
+        requestBody = JSON.stringify(redact(request.body)).substring(0, 2000);
       } catch (e) {
         requestBody = '[Unable to serialize request body]';
       }
@@ -38,7 +64,7 @@ export class ActivityLogsInterceptor implements NestInterceptor {
         let responseBody = '';
         if (data) {
           try {
-            responseBody = JSON.stringify(data).substring(0, 2000);
+            responseBody = JSON.stringify(redact(data)).substring(0, 2000);
           } catch (e) {
             responseBody = '[Unable to serialize response body]';
           }

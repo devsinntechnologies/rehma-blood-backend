@@ -28,7 +28,8 @@ export class BloodRequestsController {
   @Get()
   @ApiOperation({ summary: 'List all requests, urgent first' })
   findAll(@Request() req: any) {
-    const userId = req.user?.sub;
+    // Superadmin sees every request; other roles don't see their own requests in the feed.
+    const userId = req.user?.role === 'superadmin' ? undefined : req.user?.sub;
     return this.bloodRequestsService.findAll(userId ? Number(userId) : undefined);
   }
 

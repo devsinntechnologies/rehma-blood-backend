@@ -1,11 +1,12 @@
 import { Controller, Get, UseGuards, Request } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../shared/guards/jwt-auth.guard';
+import { SuperAdminRoleGuard } from '../shared/guards/superadmin-role.guard';
 
 @ApiTags('Superadmin Auth')
 @ApiBearerAuth('jwt')
 @Controller('superadmin')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, SuperAdminRoleGuard)
 export class SuperAdminProfileController {
   @Get('profile')
   @ApiOperation({ summary: 'Get authenticated superadmin profile' })

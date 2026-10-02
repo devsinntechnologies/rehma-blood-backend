@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AppStorageService, DonorRecord } from '../storage/app-storage.service';
+import { AppStorageService, BloodRequestRecord, toPublicDonor } from '../storage/app-storage.service';
 import { NearbyDonorsQueryDto } from './dto/nearby-donors-query.dto';
 
 @Injectable()
@@ -21,16 +21,7 @@ export class MapService {
   getActiveRequests() {
     const requests = this.appStorageService.listActiveBloodRequests();
     return {
-      requests: requests.map((request) => ({
-        id: request.id,
-        bloodGroup: request.bloodGroup,
-        urgency: request.urgency,
-        requiredUnits: request.requiredUnits,
-        latitude: request.latitude,
-        longitude: request.longitude,
-        status: request.status,
-        notes: request.notes,
-      })),
+      requests: requests.map((request) => this.toRequestMarker(request)),
     };
   }
 
@@ -43,16 +34,22 @@ export class MapService {
       donors: this.findNearbyDonors(query),
       requests: this.appStorageService
         .getActiveRequestsForBloodGroup(query.bloodGroup)
-        .map((request) => ({
-          id: request.id,
-          bloodGroup: request.bloodGroup,
-          urgency: request.urgency,
-          requiredUnits: request.requiredUnits,
-          latitude: request.latitude,
-          longitude: request.longitude,
-          status: request.status,
-          notes: request.notes,
-        })),
+        .map((request) => this.toRequestMarker(request)),
+    };
+  }
+
+  private toRequestMarker(request: BloodRequestRecord) {
+    return {
+      id: request.id,
+      requesterName: request.requesterName,
+      bloodGroup: request.bloodGroup,
+      urgency: request.urgency,
+      requiredUnits: request.requiredUnits,
+      latitude: request.latitude,
+      longitude: request.longitude,
+      status: request.status,
+      notes: request.notes,
+      createdAt: request.createdAt,
     };
   }
 
@@ -60,7 +57,7 @@ export class MapService {
     const donors = this.appStorageService.getRelevantDonors(query.bloodGroup);
     return donors
       .map((donor) => ({
-        ...donor,
+        ...toPublicDonor(donor),
         distanceKm: this.distanceKm(query.latitude, query.longitude, donor.latitude, donor.longitude),
       }))
       .filter((donor) => donor.distanceKm <= (query.radiusKm ?? 25))

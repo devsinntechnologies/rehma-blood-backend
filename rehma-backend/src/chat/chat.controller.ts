@@ -97,8 +97,8 @@ export class ChatController {
 
   @Get('attachments/:id')
   @ApiOperation({ summary: 'Download a chat attachment' })
-  downloadAttachment(@Param('id') id: string) {
-    const attachment = this.chatService.getAttachment(Number(id));
+  downloadAttachment(@Param('id') id: string, @Request() req: any) {
+    const attachment = this.chatService.getAttachment(Number(id), { role: req.user.role, userId: Number(req.user.sub) });
     return new StreamableFile(createReadStream(attachment.filePath), {
       type: attachment.attachment.mimeType,
       disposition: `inline; filename="${attachment.attachment.originalName.replace(/"/g, '')}"`,

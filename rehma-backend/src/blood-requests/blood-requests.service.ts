@@ -310,6 +310,7 @@ export class BloodRequestsService {
         return (
           ownerUserId != null &&
           ownerUserId !== requesterUserId &&
+          donor.isActive &&
           donor.isAvailable &&
           donor.availabilityStatus === 'Available' &&
           donor.bloodGroup &&

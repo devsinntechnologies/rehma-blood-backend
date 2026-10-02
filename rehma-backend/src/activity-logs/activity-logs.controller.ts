@@ -1,8 +1,16 @@
-import { Controller, Get, Post, Param, Query, UseGuards, Body } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards, NotFoundException } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { ActivityLogsService, FilterActivityLogsDto } from './activity-logs.service';
 import { SuperAdminRoleGuard } from '../shared/guards/superadmin-role.guard';
 import { JwtAuthGuard } from '../shared/guards/jwt-auth.guard';
+
+const MAX_PAGE_SIZE = 100;
+
+const parseLimit = (value: unknown) => Math.min(Math.max(parseInt(String(value), 10) || 50, 1), MAX_PAGE_SIZE);
+
+// A bare YYYY-MM-DD end date means "through the end of that day", not its first millisecond.
+const parseEndDate = (value: string) =>
+  /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T23:59:59.999Z`) : new Date(value);
 
 @ApiTags('Activity Logs')
 @ApiBearerAuth('jwt')
@@ -25,14 +33,14 @@ export class ActivityLogsController {
   async findAll(@Query() query: any) {
     const filters: FilterActivityLogsDto = {
       startDate: query.startDate ? new Date(query.startDate) : undefined,
-      endDate: query.endDate ? new Date(query.endDate) : undefined,
+      endDate: query.endDate ? parseEndDate(query.endDate) : undefined,
       method: query.method,
       endpoint: query.endpoint,
       statusCode: query.statusCode ? parseInt(query.statusCode) : undefined,
       userEmail: query.userEmail,
       userRole: query.userRole,
-      limit: query.limit ? parseInt(query.limit) : 50,
-      page: query.page ? parseInt(query.page) : 1,
+      limit: parseLimit(query.limit),
+      page: Math.max(parseInt(query.page, 10) || 1, 1),
     };
 
     return this.activityLogsService.findAll(filters);
@@ -47,7 +55,11 @@ export class ActivityLogsController {
   @Get(':id')
   @ApiOperation({ summary: 'Get activity log by ID (Super Admin only)' })
   async findOne(@Param('id') id: string) {
-    return this.activityLogsService.findOne(Number(id));
+    const log = await this.activityLogsService.findOne(Number(id));
+    if (!log) {
+      throw new NotFoundException(`Activity log ${id} not found`);
+    }
+    return log;
   }
 
   @Get('user/:userEmail')

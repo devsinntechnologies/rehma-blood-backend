@@ -18,6 +18,7 @@ import { ActivityLogsModule } from './activity-logs/activity-logs.module';
 import { DatabaseModule } from './database/database.module';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ActivityLogsInterceptor } from './shared/interceptors/activity-logs.interceptor';
+import { PersistenceInterceptor } from './storage/persistence.interceptor';
 
 @Module({
   imports: [
@@ -43,6 +44,10 @@ import { ActivityLogsInterceptor } from './shared/interceptors/activity-logs.int
     {
       provide: APP_INTERCEPTOR,
       useClass: ActivityLogsInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useExisting: PersistenceInterceptor,
     },
   ],
 })

@@ -1,22 +1,29 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryColumn } from 'typeorm';
 
+/** Mirrors BloodDonationRecord (storage/app-storage.service.ts). IDs are assigned by the app. */
 @Entity({ name: 'blood_donations' })
 export class BloodDonation {
-  @PrimaryGeneratedColumn()
+  @PrimaryColumn({ type: 'int' })
   id!: number;
 
-  @Column()
+  @Column({ type: 'int', nullable: true })
+  requestId!: number | null;
+
+  @Column({ type: 'int' })
+  donorId!: number;
+
+  @Column({ type: 'varchar' })
   donorName!: string;
 
-  @Column()
+  @Column({ type: 'varchar' })
   bloodGroup!: string;
 
-  @Column({ default: 'completed' })
+  @Column({ type: 'varchar' })
   status!: string;
 
-  @CreateDateColumn()
+  @Column({ type: 'timestamptz' })
   createdAt!: Date;
 
-  @UpdateDateColumn()
+  @Column({ type: 'timestamptz' })
   updatedAt!: Date;
 }

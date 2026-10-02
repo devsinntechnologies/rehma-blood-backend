@@ -1,9 +1,13 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryColumn } from 'typeorm';
 
+/** Mirrors BloodRequestRecord (storage/app-storage.service.ts). IDs are assigned by the app. */
 @Entity({ name: 'blood_requests' })
 export class BloodRequest {
-  @PrimaryGeneratedColumn()
+  @PrimaryColumn({ type: 'int' })
   id!: number;
+
+  @Column({ type: 'int', nullable: true })
+  requesterUserId!: number | null;
 
   @Column({ type: 'varchar', nullable: true })
   requesterName!: string | null;
@@ -11,26 +15,32 @@ export class BloodRequest {
   @Column({ type: 'varchar', nullable: true })
   requesterContact!: string | null;
 
-  @Column()
+  @Column({ type: 'varchar' })
   bloodGroup!: string;
 
   @Column({ type: 'int' })
   requiredUnits!: number;
 
-  @Column({ default: 'normal' })
-  urgency!: 'urgent' | 'normal';
+  @Column({ type: 'varchar' })
+  urgency!: string;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column({ type: 'text', nullable: true })
   notes!: string | null;
 
-  @Column({ type: 'float' })
+  @Column({ type: 'double precision' })
   latitude!: number;
 
-  @Column({ type: 'float' })
+  @Column({ type: 'double precision' })
   longitude!: number;
 
-  @Column({ default: 'active' })
-  status!: 'active' | 'accepted' | 'on_the_way' | 'arrived_at_hospital' | 'donation_completed';
+  @Column({ type: 'varchar' })
+  status!: string;
+
+  @Column({ type: 'int', nullable: true })
+  requestedToDonorId!: number | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  requestedToDonorName!: string | null;
 
   @Column({ type: 'int', nullable: true })
   acceptedByDonorId!: number | null;
@@ -38,10 +48,13 @@ export class BloodRequest {
   @Column({ type: 'varchar', nullable: true })
   acceptedByDonorName!: string | null;
 
-  @Column({ type: 'timestamp', nullable: true })
+  @Column({ type: 'timestamptz', nullable: true })
   acceptedAt!: Date | null;
 
-  @Column({ type: 'timestamp', nullable: true })
+  @Column({ type: 'timestamptz', nullable: true })
+  scheduledDate!: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
   completedAt!: Date | null;
 
   @Column({ type: 'int', nullable: true })
@@ -50,9 +63,9 @@ export class BloodRequest {
   @Column({ type: 'varchar', nullable: true })
   fulfilledByDonorName!: string | null;
 
-  @CreateDateColumn()
+  @Column({ type: 'timestamptz' })
   createdAt!: Date;
 
-  @UpdateDateColumn()
+  @Column({ type: 'timestamptz' })
   updatedAt!: Date;
 }

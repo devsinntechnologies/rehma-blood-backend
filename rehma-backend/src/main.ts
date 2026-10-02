@@ -7,6 +7,8 @@ import { HttpResponseInterceptor } from './shared/http-response.interceptor';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
+  // Lets StoragePersistenceService save pending changes when the process is stopped.
+  app.enableShutdownHooks();
 
   app.useGlobalPipes(
     new ValidationPipe({

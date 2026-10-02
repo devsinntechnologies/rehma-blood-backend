@@ -193,6 +193,32 @@ export type ChatMessageRecord = {
   deletedAt?: Date | null;
 };
 
+/** Every collection the storage service owns; this is exactly what gets persisted to Postgres. */
+export type StorageState = {
+  superAdmins: SuperAdminRecord[];
+  donors: DonorRecord[];
+  bloodRequests: BloodRequestRecord[];
+  bloodDonations: BloodDonationRecord[];
+  notifications: NotificationRecord[];
+  chatConversations: ChatConversationRecord[];
+  chatMessages: ChatMessageRecord[];
+  chatAttachments: ChatAttachmentRecord[];
+  users: UserRecord[];
+  resetTokens: ResetTokenRecord[];
+};
+
+// Methods that don't touch application data, so calling them needn't trigger a save.
+const NON_MUTATING_METHODS = new Set(['constructor', 'onModuleInit', 'exportState', 'hydrate', 'setChangeListener']);
+
+/**
+ * Drops keys whose value is undefined. Validated DTOs (TS target ES2022) carry every optional
+ * field as an own `undefined` property, and Object.assign would copy those over real values —
+ * e.g. PATCH { isActive: false } used to erase the donor's name, phone and blood group.
+ */
+function definedOnly<T extends object>(partial: T): Partial<T> {
+  return Object.fromEntries(Object.entries(partial).filter(([, value]) => value !== undefined)) as Partial<T>;
+}
+
 /** Strips credentials before a donor record leaves the API. */
 export function toPublicDonor<T extends DonorRecord>(donor: T): Omit<T, 'passwordHash'> {
   const { passwordHash: _passwordHash, ...rest } = donor;
@@ -219,6 +245,83 @@ export class AppStorageService implements OnModuleInit {
   private chatConversationId = 1;
   private chatMessageId = 1;
   private chatAttachmentId = 1;
+  private notificationId = 1;
+
+  private changeListener?: () => void;
+
+  constructor() {
+    // Records are mutated in place all over this class (and by callers holding references), so
+    // rather than tracking each write, notify the persistence layer after every call and let it
+    // diff the collections against what's already in the database.
+    const prototype = Object.getPrototypeOf(this) as Record<string, unknown>;
+    for (const name of Object.getOwnPropertyNames(prototype)) {
+      const method = prototype[name];
+      if (NON_MUTATING_METHODS.has(name) || typeof method !== 'function') continue;
+      Object.defineProperty(this, name, {
+        value: (...args: unknown[]) => {
+          const result = (method as (...a: unknown[]) => unknown).apply(this, args);
+          this.changeListener?.();
+          return result;
+        },
+      });
+    }
+  }
+
+  setChangeListener(listener: () => void): void {
+    this.changeListener = listener;
+  }
+
+  /** Live references to every collection (not copies) — callers must not mutate them. */
+  exportState(): StorageState {
+    return {
+      superAdmins: this.superAdmins,
+      donors: this.donors,
+      bloodRequests: this.bloodRequests,
+      bloodDonations: this.bloodDonations,
+      notifications: this.notifications,
+      chatConversations: this.chatConversations,
+      chatMessages: this.chatMessages,
+      chatAttachments: this.chatAttachments,
+      users: this.users,
+      resetTokens: this.resetTokens,
+    };
+  }
+
+  /** Replaces all data with what was loaded from the database and moves ID counters past it. */
+  hydrate(state: StorageState): void {
+    this.superAdmins = state.superAdmins;
+    this.donors = state.donors;
+    this.bloodRequests = state.bloodRequests;
+    this.bloodDonations = state.bloodDonations;
+    this.notifications = state.notifications;
+    this.chatConversations = state.chatConversations;
+    this.chatAttachments = state.chatAttachments;
+    this.users = state.users;
+    this.resetTokens = state.resetTokens;
+
+    // Messages embed their attachment objects; re-link them so both views share the same records.
+    const attachmentsByMessage = new Map<number, ChatAttachmentRecord[]>();
+    for (const attachment of state.chatAttachments) {
+      const list = attachmentsByMessage.get(attachment.messageId) ?? [];
+      list.push(attachment);
+      attachmentsByMessage.set(attachment.messageId, list);
+    }
+    this.chatMessages = state.chatMessages.map((message) => ({
+      ...message,
+      attachments: (attachmentsByMessage.get(message.id) ?? []).sort((left, right) => left.id - right.id),
+    }));
+
+    const nextId = (records: Array<{ id: number }>, current: number) =>
+      Math.max(current, records.reduce((max, record) => Math.max(max, record.id), 0) + 1);
+    this.donorId = nextId(this.donors, this.donorId);
+    this.requestId = nextId(this.bloodRequests, this.requestId);
+    this.donationId = nextId(this.bloodDonations, this.donationId);
+    this.userId = nextId(this.users, this.userId);
+    this.chatConversationId = nextId(this.chatConversations, this.chatConversationId);
+    this.chatMessageId = nextId(this.chatMessages, this.chatMessageId);
+    this.chatAttachmentId = nextId(this.chatAttachments, this.chatAttachmentId);
+    this.notificationId = nextId(this.notifications, this.notificationId);
+  }
 
   async onModuleInit(): Promise<void> {
     const passwordHash = await bcrypt.hash(process.env.SUPERADMIN_PASSWORD ?? 'ChangeMe123!', 10);
@@ -663,7 +766,7 @@ export class AppStorageService implements OnModuleInit {
   updateDonor(id: number, partial: Partial<Omit<DonorRecord, 'id' | 'createdAt' | 'updatedAt'>>): DonorRecord | undefined {
     const donor = this.getDonor(id);
     if (!donor) return undefined;
-    Object.assign(donor, partial, { updatedAt: new Date() });
+    Object.assign(donor, definedOnly(partial), { updatedAt: new Date() });
     return donor;
   }
 
@@ -804,7 +907,7 @@ export class AppStorageService implements OnModuleInit {
   updateBloodRequest(id: number, partial: Partial<Omit<BloodRequestRecord, 'id' | 'createdAt' | 'updatedAt'>>): BloodRequestRecord | undefined {
     const bloodRequest = this.getBloodRequest(id);
     if (!bloodRequest) return undefined;
-    Object.assign(bloodRequest, partial, { updatedAt: new Date() });
+    Object.assign(bloodRequest, definedOnly(partial), { updatedAt: new Date() });
     return bloodRequest;
   }
 
@@ -1021,7 +1124,7 @@ export class AppStorageService implements OnModuleInit {
     if (!bloodDonation) return undefined;
     const now = new Date();
     const prevStatus = bloodDonation.status;
-    Object.assign(bloodDonation, partial, { updatedAt: now });
+    Object.assign(bloodDonation, definedOnly(partial), { updatedAt: now });
 
     // If donation moved to completed, mark donor as recently donated
     if (partial.status === 'completed' && prevStatus !== 'completed') {
@@ -1057,7 +1160,7 @@ export class AppStorageService implements OnModuleInit {
   }): NotificationRecord {
     const now = new Date();
     const notification: NotificationRecord = {
-      id: this.notifications.length + 1,
+      id: this.notificationId++,
       recipientRole: input.recipientRole,
       recipientUserId: input.recipientUserId,
       type: input.type,
@@ -1366,7 +1469,7 @@ export class AppStorageService implements OnModuleInit {
       return undefined;
     }
 
-    Object.assign(participant, partial);
+    Object.assign(participant, definedOnly(partial));
     conversation.updatedAt = new Date();
     return conversation;
   }
@@ -1423,7 +1526,7 @@ export class AppStorageService implements OnModuleInit {
     const user = this.getUserById(id);
     if (!user) return undefined;
 
-    Object.assign(user, partial, { updatedAt: new Date() });
+    Object.assign(user, definedOnly(partial), { updatedAt: new Date() });
     return user;
   }
 

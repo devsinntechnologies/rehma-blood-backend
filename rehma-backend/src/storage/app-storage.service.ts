@@ -402,13 +402,6 @@ export class AppStorageService implements OnModuleInit {
     return donor.linkedUserId ?? donor.userId ?? donor.createdByUserId ?? null;
   }
 
-  hasAvailableDonor(userId: number): boolean {
-    return this.donors.some((donor) => {
-      const ownerUserId = this.getDonorOwnerUserId(donor);
-      return ownerUserId === userId && donor.isAvailable && donor.availabilityStatus === 'Available';
-    });
-  }
-
   addOrUpdateDonor(input: {
     fullName: string;
     email?: string | null;
@@ -1112,7 +1105,10 @@ export class AppStorageService implements OnModuleInit {
 
     if (!eligible.length) return undefined;
 
-    const donor = eligible[0];
+    // The user donates themselves when they can; one of the donors they
+    // created stands in only when their own profile is not eligible.
+    const isSelf = (d: DonorRecord) => d.userId === userId || d.linkedUserId === userId;
+    const donor = eligible.find(isSelf) ?? eligible[0];
     const now = new Date();
 
     bloodRequest.acceptedByDonorId = donor.id;

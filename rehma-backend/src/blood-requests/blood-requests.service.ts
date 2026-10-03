@@ -12,15 +12,9 @@ export class BloodRequestsService {
   ) {}
 
   create(createBloodRequestDto: CreateBloodRequestDto, userId?: number) {
-    // Check if user has at least one available donor to create a blood request
     if (userId) {
       if (this.appStorageService.hasOpenBloodRequestForUser(userId)) {
         throw new ForbiddenException('You already have an open blood request. Complete it before creating a new one');
-      }
-
-      const hasAvailable = this.appStorageService.hasAvailableDonor(userId);
-      if (!hasAvailable) {
-        throw new ForbiddenException('You must have at least one donor with Available status to create a blood request');
       }
     }
 
@@ -203,7 +197,12 @@ export class BloodRequestsService {
   complete(id: number, donorId: number) {
     // existing implementation unchanged
 
-    const bloodRequest = this.appStorageService.completeBloodRequest(id, donorId);
+    // The donation belongs to the donor who accepted or scheduled the request.
+    // Apps send their own profile's id (an owner completing on behalf of a
+    // donor they added), which would credit the donation to the wrong donor.
+    const existing = this.appStorageService.getBloodRequest(id);
+    const creditedDonorId = existing?.acceptedByDonorId ?? donorId;
+    const bloodRequest = this.appStorageService.completeBloodRequest(id, creditedDonorId);
     if (!bloodRequest) {
       throw new NotFoundException(`Blood request or donor not found`);
     }
@@ -211,10 +210,10 @@ export class BloodRequestsService {
     this.notificationsService.notifySuperAdmins({
       type: 'blood_request_completed',
       title: 'Blood request completed',
-      message: `Blood request #${bloodRequest.id} was completed by donor #${donorId}.`,
+      message: `Blood request #${bloodRequest.id} was completed by donor #${creditedDonorId}.`,
       entityType: 'blood_request',
       entityId: bloodRequest.id,
-      metadata: { bloodRequest, donorId },
+      metadata: { bloodRequest, donorId: creditedDonorId },
     });
 
     if (bloodRequest.requesterUserId) {
@@ -225,7 +224,7 @@ export class BloodRequestsService {
         message: `Your blood request #${bloodRequest.id} has been completed.`,
         entityType: 'blood_request',
         entityId: bloodRequest.id,
-        metadata: { bloodRequest, donorId },
+        metadata: { bloodRequest, donorId: creditedDonorId },
       });
     }
 

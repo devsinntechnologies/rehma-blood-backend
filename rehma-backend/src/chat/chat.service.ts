@@ -49,6 +49,15 @@ export class ChatService {
   }
 
   createConversation(account: ChatAccount, input: CreateChatConversationDto) {
+    // The creator is added automatically, so a conversation needs at least one
+    // other participant; otherwise a user ends up chatting with themselves.
+    const others = input.participants.filter(
+      (participant) => !(participant.role === account.role && Number(participant.userId) === Number(account.userId)),
+    );
+    if (!others.length) {
+      throw new BadRequestException("You can't start a chat with yourself");
+    }
+
     const conversation = this.storageService.createChatConversation({
       type: input.type,
       title: input.title?.trim() || null,

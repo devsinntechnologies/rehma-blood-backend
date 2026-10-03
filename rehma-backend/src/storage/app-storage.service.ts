@@ -63,6 +63,9 @@ export type BloodRequestRecord = {
   completedAt?: Date | null;
   fulfilledByDonorId?: number | null;
   fulfilledByDonorName?: string | null;
+  /** Requester confirmed the blood was received (POST /blood-requests/:id/confirm-receipt). */
+  received?: boolean;
+  receivedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -360,6 +363,19 @@ export class AppStorageService implements OnModuleInit {
     const list = this.donors
       .filter((donor) => donor.userId === userId || donor.linkedUserId === userId || donor.claimedByUserId === userId || donor.createdByUserId === userId)
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+    list.forEach((d) => this.restoreAvailabilityIfEligible(d));
+    return list;
+  }
+
+  /**
+   * Donor profiles that belong to the user themselves (sign-up profile or one
+   * they claimed). Unlike getDonorsByUserId, this excludes donors the user
+   * merely created for other people.
+   */
+  getOwnDonorProfiles(userId: number): DonorRecord[] {
+    const list = this.donors
+      .filter((donor) => donor.linkedUserId === userId || donor.userId === userId || donor.claimedByUserId === userId)
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
     list.forEach((d) => this.restoreAvailabilityIfEligible(d));
     return list;
   }
@@ -893,6 +909,8 @@ export class AppStorageService implements OnModuleInit {
       completedAt: null,
       fulfilledByDonorId: null,
       fulfilledByDonorName: null,
+      received: false,
+      receivedAt: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -948,6 +966,8 @@ export class AppStorageService implements OnModuleInit {
       if (!wasCompleted) {
         this.recordCompletedDonation(bloodRequest, now);
       }
+    } else if (wasCompleted) {
+      this.revertCompletedDonation(bloodRequest, now);
     }
 
     bloodRequest.updatedAt = now;
@@ -971,6 +991,21 @@ export class AppStorageService implements OnModuleInit {
     donor.availabilityStatus = 'Recently Donated';
     donor.totalDonations = (donor.totalDonations ?? 0) + 1;
     donor.updatedAt = now;
+  }
+
+  // A request reopened after completion (e.g. the requester reports the blood was not received)
+  // must not keep counting towards the donor, or completing it again would count it twice.
+  private revertCompletedDonation(bloodRequest: BloodRequestRecord, now: Date) {
+    const donation = this.getBloodDonationByRequestId(bloodRequest.id);
+    if (!donation || donation.status !== 'completed') return;
+
+    donation.status = 'donation_pending';
+    donation.updatedAt = now;
+    const donor = this.getDonor(donation.donorId);
+    if (donor) {
+      donor.totalDonations = Math.max((donor.totalDonations ?? 0) - 1, 0);
+      donor.updatedAt = now;
+    }
   }
 
   getBloodDonationByRequestId(requestId: number): BloodDonationRecord | undefined {

@@ -63,6 +63,12 @@ export class BloodRequest {
   @Column({ type: 'varchar', nullable: true })
   fulfilledByDonorName!: string | null;
 
+  @Column({ type: 'boolean', default: false })
+  received!: boolean;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  receivedAt!: Date | null;
+
   @Column({ type: 'timestamptz' })
   createdAt!: Date;
 

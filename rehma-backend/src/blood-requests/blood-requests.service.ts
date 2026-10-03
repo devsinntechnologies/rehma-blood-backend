@@ -256,7 +256,13 @@ export class BloodRequestsService {
     }
     const status = received ? 'donation_completed' : 'active';
     // Update request status accordingly
-    return this.appStorageService.updateBloodRequestStatus(id, status);
+    this.appStorageService.updateBloodRequestStatus(id, status);
+    // The donor completing already sets `donation_completed`, so the status alone can't tell
+    // whether the requester has confirmed; `received` records that step.
+    return this.appStorageService.updateBloodRequest(id, {
+      received,
+      receivedAt: received ? new Date() : null,
+    });
   }
 
 

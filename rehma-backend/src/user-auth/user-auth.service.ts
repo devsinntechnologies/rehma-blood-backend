@@ -222,7 +222,8 @@ export class UserAuthService {
   }
 
   getMyDonorProfile(userId: number) {
-    const donors = this.storageService.getDonorsByUserId(userId);
+    // Only the user's own profile(s); donors they added for others are listed via /donors/my-created.
+    const donors = this.storageService.getOwnDonorProfiles(userId);
     if (donors.length === 0) {
       throw new NotFoundException('No donor profiles found for current user');
     }
@@ -252,6 +253,21 @@ export class UserAuthService {
     const user = this.storageService.updateUserProfile(userId, input);
     if (!user) {
       throw new NotFoundException('User not found');
+    }
+
+    // The user's own donor profile holds a copy of these fields (made at
+    // sign-up), and nearby donors, matching and chat read the donor copy.
+    // Keep it in step so a renamed user doesn't show the old name there.
+    // Donors this user created for other people are not linked and stay as is.
+    for (const donor of this.storageService.getAllDonorsByLinkedUserId(userId)) {
+      this.storageService.updateDonor(donor.id, {
+        fullName: input.fullName,
+        email: input.email,
+        phone: input.mobileNumber,
+        bloodGroup: input.bloodGroup,
+        dateOfBirth: input.dateOfBirth,
+        lastDonationDate: input.lastBloodDonation,
+      });
     }
 
     return {

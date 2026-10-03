@@ -222,6 +222,14 @@ function definedOnly<T extends object>(partial: T): Partial<T> {
   return Object.fromEntries(Object.entries(partial).filter(([, value]) => value !== undefined)) as Partial<T>;
 }
 
+/** A donor has taken the request on but has not completed the donation yet. */
+export const IN_PROGRESS_REQUEST_STATUSES: BloodRequestRecord['status'][] = [
+  'request_accepted',
+  'accepted',
+  'on_the_way',
+  'arrived_at_hospital',
+];
+
 /** Strips credentials before a donor record leaves the API. */
 export function toPublicDonor<T extends DonorRecord>(donor: T): Omit<T, 'passwordHash'> {
   const { passwordHash: _passwordHash, ...rest } = donor;
@@ -400,6 +408,11 @@ export class AppStorageService implements OnModuleInit {
 
   getDonorOwnerUserId(donor: DonorRecord): number | null {
     return donor.linkedUserId ?? donor.userId ?? donor.createdByUserId ?? null;
+  }
+
+  /** Donors this user currently controls: their own profile plus added donors nobody has claimed. */
+  getDonorsOwnedBy(userId: number): DonorRecord[] {
+    return this.listDonors().filter((donor) => this.getDonorOwnerUserId(donor) === userId);
   }
 
   addOrUpdateDonor(input: {
@@ -784,8 +797,7 @@ export class AppStorageService implements OnModuleInit {
   }
 
   updateDonorAvailabilityStatus(id: number, availabilityStatus: DonorRecord['availabilityStatus']): DonorRecord | undefined {
-    const isAvailable = availabilityStatus === 'Available' || availabilityStatus === 'Recently Donated';
-    return this.updateDonor(id, { isAvailable, availabilityStatus });
+    return this.updateDonor(id, { isAvailable: availabilityStatus === 'Available', availabilityStatus });
   }
 
   updateDonorLocation(id: number, latitude: number, longitude: number): DonorRecord | undefined {
@@ -1048,8 +1060,8 @@ export class AppStorageService implements OnModuleInit {
   }
 
   listIncomingBloodRequestsForUser(userId: number): BloodRequestRecord[] {
-    const donorIds = this.getAllMyDonors(userId)
-      .filter((donor) => donor.isAvailable && donor.availabilityStatus === 'Available')
+    const donorIds = this.getDonorsOwnedBy(userId)
+      .filter((donor) => donor.isActive && donor.isAvailable && donor.availabilityStatus === 'Available')
       .map((donor) => donor.id);
 
     return this.listBloodRequests()
@@ -1061,6 +1073,17 @@ export class AppStorageService implements OnModuleInit {
 
         return right.createdAt.getTime() - left.createdAt.getTime();
       });
+  }
+
+  /** Requests accepted or scheduled by any donor the user owns that are not completed yet. */
+  listAcceptedBloodRequestsForUser(userId: number): BloodRequestRecord[] {
+    const donorIds = new Set(this.getDonorsOwnedBy(userId).map((donor) => donor.id));
+    return this.listBloodRequests().filter(
+      (bloodRequest) =>
+        IN_PROGRESS_REQUEST_STATUSES.includes(bloodRequest.status) &&
+        bloodRequest.acceptedByDonorId != null &&
+        donorIds.has(bloodRequest.acceptedByDonorId),
+    );
   }
 
   getIncomingBloodRequestForUser(userId: number, requestId: number): BloodRequestRecord | undefined {
@@ -1087,6 +1110,9 @@ export class AppStorageService implements OnModuleInit {
     const index = this.bloodRequests.findIndex((bloodRequest) => bloodRequest.id === id);
     if (index === -1) return false;
     this.bloodRequests.splice(index, 1);
+    this.bloodDonations = this.bloodDonations.filter(
+      (donation) => donation.requestId !== id || donation.status === 'completed',
+    );
     return true;
   }
 

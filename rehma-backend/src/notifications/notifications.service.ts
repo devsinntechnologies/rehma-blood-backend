@@ -7,6 +7,15 @@ export type NotificationRecipient = {
   userId: number;
 };
 
+/**
+ * Copies metadata so later changes to the records don't leak into it, and
+ * removes password hashes that raw donor records carry.
+ */
+function sanitizeMetadata(metadata?: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!metadata) return null;
+  return JSON.parse(JSON.stringify(metadata, (key, value) => (key === 'passwordHash' ? undefined : value)));
+}
+
 @Injectable()
 export class NotificationsService {
   constructor(
@@ -39,7 +48,7 @@ export class NotificationsService {
       message: input.message,
       entityType: input.entityType ?? null,
       entityId: input.entityId ?? null,
-      metadata: input.metadata ?? null,
+      metadata: sanitizeMetadata(input.metadata),
     });
 
     this.notificationsGateway.emitNotification(notification);

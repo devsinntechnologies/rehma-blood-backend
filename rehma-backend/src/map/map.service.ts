@@ -7,7 +7,11 @@ export class MapService {
   constructor(private readonly appStorageService: AppStorageService) {}
 
   getNearbyDonors(query: NearbyDonorsQueryDto) {
-    const donors = this.findNearbyDonors(query);
+    // Any app user can see these markers, so leave out private details and the
+    // promo code (which would let someone claim an unclaimed donor profile).
+    const donors = this.findNearbyDonors(query).map(
+      ({ promoCode: _promoCode, cnic: _cnic, medicalNotes: _medicalNotes, dateOfBirth: _dateOfBirth, ...donor }) => donor,
+    );
 
     return {
       currentLocation: {

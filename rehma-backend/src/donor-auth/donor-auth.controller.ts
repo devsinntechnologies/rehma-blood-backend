@@ -22,8 +22,9 @@ export class DonorAuthController {
   @Post('login')
   @ApiOperation({ summary: 'Login as a donor' })
   @ApiBody({ type: LoginDonorDto })
-  login(@Body() dto: LoginDonorDto) {
-    return this.donorAuthService.login(dto.email, dto.password);
+  login(@Body() _dto: LoginDonorDto) {
+    // Its token carries a donor id that the other endpoints would read as a user id.
+    throw new HttpException('Donor login is deprecated. Use POST /user-auth/login instead.', HttpStatus.GONE);
   }
 
   @Get('me')

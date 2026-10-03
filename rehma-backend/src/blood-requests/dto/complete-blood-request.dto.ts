@@ -1,8 +1,10 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNumber } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsNumber, IsOptional } from 'class-validator';
 
 export class CompleteBloodRequestDto {
-  @ApiProperty({ example: 1 })
+  /** Ignored: the donation is credited to the donor who accepted the request. Kept for older app versions. */
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
   @IsNumber()
-  donorId!: number;
+  donorId?: number;
 }

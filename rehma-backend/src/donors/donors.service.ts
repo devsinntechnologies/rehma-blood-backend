@@ -33,6 +33,11 @@ export class DonorsService {
         throw new ConflictException('Donor with this phone number already exists');
       }
     }
+    // Storage matches donors by email first, so a reused email would overwrite
+    // someone else's donor profile instead of creating a new one.
+    if (createDonorDto.email && this.appStorageService.getDonorByEmail(createDonorDto.email)) {
+      throw new ConflictException('Donor with this email already exists');
+    }
 
     // generate a collision-safe promo code
     const generateCode = () => {
@@ -66,7 +71,7 @@ export class DonorsService {
       metadata: { donor, promoCode: promo },
     });
 
-    return { donor, promoCode: promo, message: 'Donor profile created successfully' };
+    return { donor: toPublicDonor(donor), promoCode: promo, message: 'Donor profile created successfully' };
   }
 
   findAll(userId?: number, userRole?: string) {
@@ -96,8 +101,29 @@ export class DonorsService {
     if (!this.canManageDonor(id, userId, userRole)) {
       throw new ForbiddenException('Only the donor owner or superadmin can update this donor');
     }
+    if (updateDonorDto.isActive !== undefined && userRole !== 'superadmin') {
+      throw new ForbiddenException('Only a Super Admin can activate or deactivate a donor');
+    }
+    if (updateDonorDto.email) {
+      const sameEmail = this.appStorageService.getDonorByEmail(updateDonorDto.email);
+      if (sameEmail && sameEmail.id !== id) {
+        throw new ConflictException('Donor with this email already exists');
+      }
+    }
+    if (updateDonorDto.phone) {
+      const samePhone = this.appStorageService.getDonorByPhone(updateDonorDto.phone);
+      if (samePhone && samePhone.id !== id) {
+        throw new ConflictException('Donor with this phone number already exists');
+      }
+    }
 
-    const donor = this.appStorageService.updateDonor(id, updateDonorDto);
+    // isAvailable and availabilityStatus must agree (matching checks both).
+    const changes: Partial<UpdateDonorDto> & { availabilityStatus?: 'Available' | 'Not Available' } = { ...updateDonorDto };
+    if (updateDonorDto.isAvailable !== undefined) {
+      changes.availabilityStatus = updateDonorDto.isAvailable ? 'Available' : 'Not Available';
+    }
+
+    const donor = this.appStorageService.updateDonor(id, changes);
     if (!donor) {
       throw new NotFoundException(`Donor with ID ${id} not found`);
     }
@@ -239,8 +265,17 @@ export class DonorsService {
     return this.appStorageService.listIncomingBloodRequestsForUser(userId);
   }
 
+  /** Requests one of the user's donors accepted or scheduled and still has to complete. */
+  getAcceptedRequests(userId: number) {
+    return this.appStorageService.listAcceptedBloodRequestsForUser(userId);
+  }
+
   getIncomingRequestById(userId: number, requestId: number) {
-    const bloodRequest = this.appStorageService.getIncomingBloodRequestForUser(userId, requestId);
+    // Waiting for one of the user's donors, or already taken on by one of them
+    // (the donor still needs the requester's details until it is completed).
+    const bloodRequest =
+      this.appStorageService.getIncomingBloodRequestForUser(userId, requestId) ??
+      this.appStorageService.listAcceptedBloodRequestsForUser(userId).find((request) => request.id === requestId);
     if (!bloodRequest) {
       throw new NotFoundException(`Incoming blood request with ID ${requestId} not found`);
     }
@@ -374,10 +409,13 @@ export class DonorsService {
     return { ...result, donor: toPublicDonor(result.donor) };
   }
 
-  getPromoCodeInfo(id: number) {
+  getPromoCodeInfo(id: number, userId?: number, userRole?: string) {
     const donor = this.appStorageService.getDonor(id);
     if (!donor) {
       throw new NotFoundException(`Donor with ID ${id} not found`);
+    }
+    if (!this.canManageDonor(id, userId, userRole)) {
+      throw new ForbiddenException("Only the donor's owner or a Super Admin can see its promo code");
     }
     return {
       donorId: donor.id,

@@ -8,6 +8,7 @@ import { CreateBloodRequestDto } from './dto/create-blood-request.dto';
 import { CompleteBloodRequestDto } from './dto/complete-blood-request.dto';
 import { UpdateBloodRequestDto } from './dto/update-blood-request.dto';
 import { ScheduleBloodRequestDto } from './dto/schedule-blood-request.dto';
+import { RequestDonorDto } from './dto/request-donor.dto';
 import { JwtAuthGuard } from '../shared/guards/jwt-auth.guard';
 
 @ApiTags('Blood Requests')
@@ -72,23 +73,24 @@ export class BloodRequestsController {
   @Patch(':id')
   @ApiOperation({ summary: 'Update blood request' })
   @ApiBody({ type: UpdateBloodRequestDto })
-  update(@Param('id') id: string, @Body() updateBloodRequestDto: UpdateBloodRequestDto) {
-    return this.bloodRequestsService.update(Number(id), updateBloodRequestDto);
+  update(@Param('id') id: string, @Request() req: any, @Body() updateBloodRequestDto: UpdateBloodRequestDto) {
+    return this.bloodRequestsService.update(Number(id), updateBloodRequestDto, req.user?.role);
   }
 
   @Patch(':id/complete')
   @ApiOperation({ summary: 'Mark request as completed and attach donor' })
   @ApiBody({ type: CompleteBloodRequestDto })
-  complete(@Param('id') id: string, @Body() body: CompleteBloodRequestDto) {
-    return this.bloodRequestsService.complete(Number(id), Number(body.donorId));
+  complete(@Param('id') id: string, @Request() req: any, @Body() _body: CompleteBloodRequestDto) {
+    // The body's donorId is accepted for older app versions but ignored: the
+    // donation is credited to the donor who accepted the request.
+    return this.bloodRequestsService.complete(Number(id), Number(req.user?.sub), req.user?.role);
   }
 
   @Patch(':id/donor-complete')
   @ApiOperation({ summary: 'Donor marks donation as completed' })
   @ApiBody({ type: DonorCompleteDto })
-  donorComplete(@Param('id') id: string, @Request() req: any, @Body() dto: DonorCompleteDto) {
-    const donorId = dto.donorId ?? Number(req.user?.sub);
-    return this.bloodRequestsService.donorComplete(Number(id), donorId);
+  donorComplete(@Param('id') id: string, @Request() req: any, @Body() _dto: DonorCompleteDto) {
+    return this.bloodRequestsService.complete(Number(id), Number(req.user?.sub), req.user?.role);
   }
 
   @Post(':id/confirm-receipt')
@@ -108,9 +110,10 @@ export class BloodRequestsController {
 
   @Post(':id/request')
   @ApiOperation({ summary: 'Request an available donor for this blood request' })
-  requestAnyAvailableDonor(@Param('id') id: string, @Request() req: any) {
+  @ApiBody({ type: RequestDonorDto, required: false })
+  requestAnyAvailableDonor(@Param('id') id: string, @Request() req: any, @Body() dto: RequestDonorDto) {
     const userId = req.user?.sub;
-    return this.bloodRequestsService.requestAnyAvailableDonor(Number(id), Number(userId));
+    return this.bloodRequestsService.requestAnyAvailableDonor(Number(id), Number(userId), dto?.donorId);
   }
 
   @Post('schedule')
@@ -124,7 +127,7 @@ export class BloodRequestsController {
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete blood request' })
-  remove(@Param('id') id: string) {
-    return this.bloodRequestsService.remove(Number(id));
+  remove(@Param('id') id: string, @Request() req: any) {
+    return this.bloodRequestsService.remove(Number(id), Number(req.user?.sub), req.user?.role);
   }
 }

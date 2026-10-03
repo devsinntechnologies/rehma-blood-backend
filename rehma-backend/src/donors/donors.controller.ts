@@ -5,6 +5,7 @@ import { CreateDonorDto } from './dto/create-donor.dto';
 import { UpdateDonorDto } from './dto/update-donor.dto';
 import { UpdateDonorAvailabilityDto } from './dto/update-donor-availability.dto';
 import { JwtAuthGuard } from '../shared/guards/jwt-auth.guard';
+import { SuperAdminRoleGuard } from '../shared/guards/superadmin-role.guard';
 
 @ApiTags('Donors - Admin')
 @ApiBearerAuth('jwt')
@@ -40,6 +41,12 @@ export class DonorsController {
     return this.donorsService.getIncomingRequests(Number(req.user.sub));
   }
 
+  @Get('accepted-requests')
+  @ApiOperation({ summary: "Requests the authenticated user's donors accepted or scheduled and have not completed yet" })
+  getAcceptedRequests(@Request() req: any) {
+    return this.donorsService.getAcceptedRequests(Number(req.user.sub));
+  }
+
   @Get('incoming-requests/:id')
   @ApiOperation({ summary: 'Get an incoming blood request by ID for the authenticated donor' })
   getIncomingRequestById(@Param('id') id: string, @Request() req: any) {
@@ -54,8 +61,8 @@ export class DonorsController {
 
   @Get(':id/promo')
   @ApiOperation({ summary: 'Get promo code info for a donor' })
-  getPromoInfo(@Param('id') id: string) {
-    return this.donorsService.getPromoCodeInfo(Number(id));
+  getPromoInfo(@Param('id') id: string, @Request() req: any) {
+    return this.donorsService.getPromoCodeInfo(Number(id), Number(req.user?.sub), req.user?.role);
   }
 
   @Get(':id')
@@ -74,12 +81,14 @@ export class DonorsController {
   }
 
   @Patch(':id/disable-promo')
+  @UseGuards(SuperAdminRoleGuard)
   @ApiOperation({ summary: 'Disable promo code for a donor (marks as expired)' })
   disablePromo(@Param('id') id: string) {
     return this.donorsService.disablePromoCode(Number(id));
   }
 
   @Patch(':id/regenerate-promo')
+  @UseGuards(SuperAdminRoleGuard)
   @ApiOperation({ summary: 'Regenerate promo code for an unclaimed donor' })
   regeneratePromo(@Param('id') id: string) {
     return this.donorsService.regeneratePromoCode(Number(id));

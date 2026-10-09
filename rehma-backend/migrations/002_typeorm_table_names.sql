@@ -1,36 +1,32 @@
--- Run manually in staging/production (TYPEORM_SYNCHRONIZE=false).
--- Idempotent: safe to re-apply; uses IF NOT EXISTS where supported.
+-- Aligns with TypeORM @Entity names (plural). Safe to re-run.
+-- Run after 001 if 001 created singular tables or failed on blood_request ALTERs.
 
--- NOTE: TypeORM uses plural table names. Prefer migrations/002_typeorm_table_names.sql on production.
--- Legacy singular names below are kept for backward compatibility with early 001 runs.
-
-CREATE TABLE IF NOT EXISTS request_participation (
-  id SERIAL PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS request_participations (
+  id INTEGER PRIMARY KEY,
   "requestId" INTEGER NOT NULL,
   "donorId" INTEGER NOT NULL,
   "ownerUserId" INTEGER NOT NULL,
   "historicalOwnerUserId" INTEGER,
   status VARCHAR(32) NOT NULL,
   "responseType" VARCHAR(32),
-  "unitsCommitted" INTEGER NOT NULL DEFAULT 0,
+  "unitsCommitted" INTEGER NOT NULL DEFAULT 1,
   "unitsReported" INTEGER NOT NULL DEFAULT 0,
   "unitsConfirmed" INTEGER NOT NULL DEFAULT 0,
   "legacyMigrated" BOOLEAN NOT NULL DEFAULT FALSE,
   "needsAdminReconciliation" BOOLEAN NOT NULL DEFAULT FALSE,
-  "quantityConfidence" VARCHAR(32) NOT NULL DEFAULT 'exact',
+  "quantityConfidence" VARCHAR(32),
   "offeredAt" TIMESTAMPTZ,
   "agreedAt" TIMESTAMPTZ,
   "inviteExpiresAt" TIMESTAMPTZ,
   "reportedAt" TIMESTAMPTZ,
   "receiptConfirmedAt" TIMESTAMPTZ,
-  "disputeReason" TEXT,
   version INTEGER NOT NULL DEFAULT 0,
   "lastEventId" VARCHAR(64),
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS idempotency_record (
+CREATE TABLE IF NOT EXISTS idempotency_records (
   key VARCHAR(256) PRIMARY KEY,
   "actorUserId" INTEGER NOT NULL,
   "actorRole" VARCHAR(32) NOT NULL,
@@ -41,7 +37,7 @@ CREATE TABLE IF NOT EXISTS idempotency_record (
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS notification_event (
+CREATE TABLE IF NOT EXISTS notification_events (
   "eventId" VARCHAR(64) PRIMARY KEY,
   "participationId" INTEGER,
   "requestId" INTEGER,
@@ -50,7 +46,7 @@ CREATE TABLE IF NOT EXISTS notification_event (
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS device_token (
+CREATE TABLE IF NOT EXISTS device_tokens (
   token VARCHAR(512) PRIMARY KEY,
   "userId" INTEGER NOT NULL,
   platform VARCHAR(16) NOT NULL,
@@ -58,8 +54,8 @@ CREATE TABLE IF NOT EXISTS device_token (
   "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS participation_audit (
-  id SERIAL PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS participation_audits (
+  id INTEGER PRIMARY KEY,
   "participationId" INTEGER,
   "requestId" INTEGER NOT NULL,
   "actorUserId" INTEGER NOT NULL,
@@ -75,7 +71,9 @@ CREATE TABLE IF NOT EXISTS participation_audit (
 ALTER TABLE blood_requests ADD COLUMN IF NOT EXISTS "hospitalName" VARCHAR(255);
 ALTER TABLE blood_requests ADD COLUMN IF NOT EXISTS "deadlineAt" TIMESTAMPTZ;
 ALTER TABLE blood_requests ADD COLUMN IF NOT EXISTS "contactPhone" VARCHAR(64);
+ALTER TABLE blood_requests ADD COLUMN IF NOT EXISTS "contactEmail" VARCHAR(255);
 ALTER TABLE blood_requests ADD COLUMN IF NOT EXISTS "matchingStopped" BOOLEAN DEFAULT FALSE;
 ALTER TABLE blood_requests ADD COLUMN IF NOT EXISTS "cancelReason" TEXT;
 ALTER TABLE blood_requests ADD COLUMN IF NOT EXISTS "cancelledAt" TIMESTAMPTZ;
+ALTER TABLE blood_requests ADD COLUMN IF NOT EXISTS "inviteRound" INTEGER DEFAULT 0;
 ALTER TABLE blood_requests ADD COLUMN IF NOT EXISTS "legacyMigrationVersion" INTEGER DEFAULT 0;

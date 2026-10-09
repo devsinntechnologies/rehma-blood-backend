@@ -5,7 +5,10 @@
 
    ```bash
    psql "$DATABASE_URL" -f migrations/001_participation_and_ops.sql
+   psql "$DATABASE_URL" -f migrations/002_typeorm_table_names.sql
    ```
+
+   **Production (TypeORM):** always apply **`002_typeorm_table_names.sql`** — table names are plural (`blood_requests`, `request_participations`, etc.).
 
 3. Start the API once so `ParticipationMigrationService` can backfill legacy rows (idempotent; skips reconciled participations).
 4. Do **not** re-run destructive scripts against production without a backup.

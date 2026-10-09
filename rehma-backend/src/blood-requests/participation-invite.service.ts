@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
 import { AppStorageService, BloodRequestRecord } from '../storage/app-storage.service';
 import { ParticipationLifecycleService } from './participation-lifecycle.service';
 import { summarizeRequestUnits } from './unit-accounting.service';
@@ -10,6 +10,7 @@ export class ParticipationInviteService {
 
   constructor(
     private readonly storage: AppStorageService,
+    @Inject(forwardRef(() => ParticipationLifecycleService))
     private readonly lifecycle: ParticipationLifecycleService,
     private readonly notifications: NotificationsService,
   ) {}

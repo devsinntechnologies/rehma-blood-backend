@@ -44,3 +44,12 @@ ALTER TABLE donors ADD COLUMN IF NOT EXISTS "claimedByUserId" INTEGER;
 ALTER TABLE donors ADD COLUMN IF NOT EXISTS "linkedUserId" INTEGER;
 ALTER TABLE donors ADD COLUMN IF NOT EXISTS "promoCodeExpiresAt" TIMESTAMPTZ;
 ALTER TABLE donors ADD COLUMN IF NOT EXISTS "claimStatus" VARCHAR(32);
+
+-- chat_messages (older DBs)
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS "replyToMessageId" INTEGER;
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS "editedAt" TIMESTAMPTZ;
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMPTZ;
+
+-- blood_requests: received flags (ensure present)
+ALTER TABLE blood_requests ADD COLUMN IF NOT EXISTS received BOOLEAN DEFAULT FALSE;
+ALTER TABLE blood_requests ADD COLUMN IF NOT EXISTS "receivedAt" TIMESTAMPTZ;

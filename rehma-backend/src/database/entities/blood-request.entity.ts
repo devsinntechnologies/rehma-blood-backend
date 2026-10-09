@@ -74,4 +74,31 @@ export class BloodRequest {
 
   @Column({ type: 'timestamptz' })
   updatedAt!: Date;
+
+  @Column({ type: 'varchar', nullable: true })
+  hospitalName!: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  deadlineAt!: Date | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  contactPhone!: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  contactEmail!: string | null;
+
+  @Column({ type: 'boolean', default: false })
+  matchingStopped!: boolean;
+
+  @Column({ type: 'text', nullable: true })
+  cancelReason!: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  cancelledAt!: Date | null;
+
+  @Column({ type: 'int', default: 0 })
+  inviteRound!: number;
+
+  @Column({ type: 'int', default: 0 })
+  legacyMigrationVersion!: number;
 }

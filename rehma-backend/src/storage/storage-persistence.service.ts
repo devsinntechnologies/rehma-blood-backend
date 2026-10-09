@@ -11,6 +11,11 @@ import { Donor } from '../database/entities/donor.entity';
 import { Notification } from '../database/entities/notification.entity';
 import { PasswordResetToken } from '../database/entities/password-reset-token.entity';
 import { SuperAdmin } from '../database/entities/superadmin.entity';
+import { RequestParticipation } from '../database/entities/request-participation.entity';
+import { IdempotencyRecordEntity } from '../database/entities/idempotency-record.entity';
+import { NotificationEvent } from '../database/entities/notification-event.entity';
+import { DeviceToken } from '../database/entities/device-token.entity';
+import { ParticipationAudit } from '../database/entities/participation-audit.entity';
 import { AppStorageService, ChatConversationRecord, StorageState } from './app-storage.service';
 
 type AnyRecord = Record<string, unknown>;
@@ -52,6 +57,11 @@ const COLLECTIONS: CollectionSpec[] = [
   { key: 'chatMessages', entity: ChatMessage, idField: 'id' },
   { key: 'chatAttachments', entity: ChatAttachment, idField: 'id' },
   { key: 'resetTokens', entity: PasswordResetToken, idField: 'token' },
+  { key: 'requestParticipations', entity: RequestParticipation, idField: 'id' },
+  { key: 'idempotencyRecords', entity: IdempotencyRecordEntity, idField: 'key' },
+  { key: 'notificationEvents', entity: NotificationEvent, idField: 'eventId' },
+  { key: 'deviceTokens', entity: DeviceToken, idField: 'token' },
+  { key: 'participationAudits', entity: ParticipationAudit, idField: 'id' },
 ];
 
 const WRITE_CHUNK_SIZE = 500;

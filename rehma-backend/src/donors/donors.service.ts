@@ -4,12 +4,14 @@ import { UpdateDonorDto } from './dto/update-donor.dto';
 import { UpdateDonorAvailabilityDto } from './dto/update-donor-availability.dto';
 import { AppStorageService, toPublicDonor } from '../storage/app-storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ParticipationLifecycleService } from '../blood-requests/participation-lifecycle.service';
 
 @Injectable()
 export class DonorsService {
   constructor(
     private readonly appStorageService: AppStorageService,
     private readonly notificationsService: NotificationsService,
+    private readonly participationLifecycle: ParticipationLifecycleService,
   ) {}
 
   private canManageDonor(donorId: number, userId?: number, userRole?: string): boolean {
@@ -262,12 +264,54 @@ export class DonorsService {
   }
 
   getIncomingRequests(userId: number) {
-    return this.appStorageService.listIncomingBloodRequestsForUser(userId);
+    return this.appStorageService.listIncomingBloodRequestsForUser(userId).map((bloodRequest) =>
+      this.enrichIncomingRequest(bloodRequest, userId),
+    );
+  }
+
+  private enrichIncomingRequest(
+    bloodRequest: import('../storage/app-storage.service').BloodRequestRecord,
+    userId: number,
+  ) {
+    const participation = this.findActionableParticipation(bloodRequest.id, bloodRequest.requestedToDonorId, userId);
+    return {
+      ...bloodRequest,
+      participationId: participation?.id ?? null,
+    };
+  }
+
+  private findActionableParticipation(requestId: number, donorId: number | null | undefined, userId: number) {
+    const open = new Set(['invited', 'available_later']);
+    return this.appStorageService
+      .listParticipationsForRequest(requestId)
+      .find(
+        (p) =>
+          open.has(p.status) &&
+          (p.ownerUserId === userId || (donorId != null && p.donorId === donorId)),
+      );
   }
 
   /** Requests one of the user's donors accepted or scheduled and still has to complete. */
   getAcceptedRequests(userId: number) {
     return this.appStorageService.listAcceptedBloodRequestsForUser(userId);
+  }
+
+  getMyCommitments(userId: number) {
+    const participations = this.appStorageService.listActiveParticipationsForOwner(userId);
+    return participations.map((p) => {
+      const request = this.appStorageService.getBloodRequest(p.requestId);
+      const donor = this.appStorageService.getDonor(p.donorId);
+      return {
+        participation: p,
+        bloodRequest: request ?? null,
+        donor: donor ? { id: donor.id, fullName: donor.fullName, bloodGroup: donor.bloodGroup } : null,
+        actingForManagedDonor:
+          donor != null &&
+          donor.createdByUserId === userId &&
+          donor.userId !== userId &&
+          donor.linkedUserId !== userId,
+      };
+    });
   }
 
   getIncomingRequestById(userId: number, requestId: number) {
@@ -283,8 +327,17 @@ export class DonorsService {
     const donor = bloodRequest.requestedToDonorId ? this.appStorageService.getDonor(bloodRequest.requestedToDonorId) : null;
     const requester = bloodRequest.requesterUserId ? this.appStorageService.getUserById(bloodRequest.requesterUserId) : null;
 
+    const participation = this.findActionableParticipation(
+      bloodRequest.id,
+      bloodRequest.requestedToDonorId,
+      userId,
+    );
+
     return {
-      bloodRequest,
+      bloodRequest: {
+        ...bloodRequest,
+        participationId: participation?.id ?? null,
+      },
       donor: donor
         ? {
             id: donor.id,
@@ -306,7 +359,55 @@ export class DonorsService {
     };
   }
 
-  acceptIncomingRequest(userId: number, requestId: number) {
+  async declineIncomingRequest(userId: number, requestId: number, idempotencyKey?: string) {
+    const bloodRequest = this.appStorageService.getIncomingBloodRequestForUser(userId, requestId);
+    if (!bloodRequest) {
+      throw new NotFoundException(`Incoming blood request with ID ${requestId} not found`);
+    }
+
+    const donor = bloodRequest.requestedToDonorId
+      ? this.appStorageService.getDonor(bloodRequest.requestedToDonorId)
+      : undefined;
+    if (!donor) {
+      throw new NotFoundException('Requested donor profile not found');
+    }
+
+    let participation = this.appStorageService
+      .listParticipationsForRequest(requestId)
+      .find((p) => p.donorId === donor.id && ['invited', 'available_later'].includes(p.status));
+
+    if (!participation) {
+      const ownerUserId = this.appStorageService.getDonorOwnerUserId(donor) ?? userId;
+      const windowMs = bloodRequest.urgency === 'urgent' ? 45 * 60_000 : 4 * 60 * 60_000;
+      participation = this.participationLifecycle.createInviteParticipation(
+        bloodRequest,
+        donor.id,
+        ownerUserId,
+        new Date(Date.now() + windowMs),
+      );
+    }
+
+    const result = await this.participationLifecycle.respond(
+      participation.id,
+      { userId, role: 'user' },
+      { response: 'cannot_help' },
+      idempotencyKey,
+    );
+
+    const updated = this.appStorageService.getBloodRequest(requestId)!;
+    return {
+      bloodRequest: { ...updated, participationId: null },
+      message: 'Incoming request declined',
+      participation: result.body,
+    };
+  }
+
+  async acceptIncomingRequest(
+    userId: number,
+    requestId: number,
+    idempotencyKey?: string,
+    unitsCommitted?: number,
+  ) {
     const bloodRequest = this.appStorageService.getIncomingBloodRequestForUser(userId, requestId);
     if (!bloodRequest) {
       throw new NotFoundException(`Incoming blood request with ID ${requestId} not found`);
@@ -317,17 +418,31 @@ export class DonorsService {
       throw new NotFoundException('Requested donor profile not found');
     }
 
-    const accepted = this.appStorageService.updateBloodRequest(bloodRequest.id, {
-      status: 'request_accepted',
-      acceptedByDonorId: donor.id,
-      acceptedByDonorName: donor.fullName,
-      acceptedAt: new Date(),
-    });
+    let participation = this.appStorageService
+      .listParticipationsForRequest(requestId)
+      .find((p) => p.donorId === donor.id && ['invited', 'available_later'].includes(p.status));
 
-    if (!accepted) {
-      throw new NotFoundException(`Blood request with ID ${requestId} not found`);
+    if (!participation) {
+      const ownerUserId = this.appStorageService.getDonorOwnerUserId(donor) ?? userId;
+      const windowMs =
+        bloodRequest.urgency === 'urgent' ? 45 * 60_000 : 4 * 60 * 60_000;
+      participation = this.participationLifecycle.createInviteParticipation(
+        bloodRequest,
+        donor.id,
+        ownerUserId,
+        new Date(Date.now() + windowMs),
+      );
     }
 
+    const units = Math.max(1, Math.min(10, Math.floor(unitsCommitted ?? 1)));
+    const result = await this.participationLifecycle.respond(
+      participation.id,
+      { userId, role: 'user' },
+      { response: 'can_help', unitsCommitted: units },
+      idempotencyKey,
+    );
+
+    const accepted = this.appStorageService.getBloodRequest(requestId)!;
     const donation = this.appStorageService.upsertBloodDonationForRequest({
       requestId: accepted.id,
       donorId: donor.id,
@@ -337,18 +452,6 @@ export class DonorsService {
     });
 
     const requester = accepted.requesterUserId ? this.appStorageService.getUserById(accepted.requesterUserId) : null;
-
-    if (accepted.requesterUserId != null) {
-      this.notificationsService.create({
-        recipient: { role: 'user', userId: accepted.requesterUserId },
-        type: 'blood_request_updated',
-        title: 'Blood request accepted',
-        message: `Your blood request #${accepted.id} was accepted by donor ${donor.fullName}.`,
-        entityType: 'blood_request',
-        entityId: accepted.id,
-        metadata: { bloodRequest: accepted, donor, donation, requester },
-      });
-    }
 
     return {
       bloodRequest: accepted,
@@ -369,6 +472,7 @@ export class DonorsService {
           }
         : null,
       bloodDonation: donation,
+      participation: result.body,
       message: 'Incoming request accepted',
     };
   }

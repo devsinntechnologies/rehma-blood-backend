@@ -42,4 +42,23 @@ export class CreateBloodRequestDto {
   @IsNumber()
   longitude!: number;
 
+  @ApiProperty({ example: 'Jinnah Hospital', required: false })
+  @IsString()
+  @IsOptional()
+  hospitalName?: string;
+
+  @ApiProperty({ example: '2026-12-01T18:00:00.000Z', required: false })
+  @IsString()
+  @IsOptional()
+  deadlineAt?: string;
+
+  @ApiProperty({ example: '+923001234567', required: false })
+  @IsString()
+  @IsOptional()
+  contactPhone?: string;
+
+  @ApiProperty({ example: 'requester@example.com', required: false })
+  @IsString()
+  @IsOptional()
+  contactEmail?: string;
 }

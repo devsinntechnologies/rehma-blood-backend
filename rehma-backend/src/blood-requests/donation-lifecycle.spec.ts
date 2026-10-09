@@ -3,6 +3,8 @@ import { AppStorageService } from '../storage/app-storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { DonorsService } from '../donors/donors.service';
 import { BloodRequestsService } from './blood-requests.service';
+import { IdempotencyService } from '../shared/idempotency.service';
+import { ParticipationLifecycleService } from './participation-lifecycle.service';
 
 class StubGateway {
   emitNotification() {}
@@ -24,8 +26,10 @@ describe('Donation lifecycle', () => {
     storage = new AppStorageService();
     await storage.onModuleInit();
     notifications = new NotificationsService(storage as any, new StubGateway() as any);
-    requests = new BloodRequestsService(storage as any, notifications as any);
-    donors = new DonorsService(storage as any, notifications as any);
+    const idempotency = new IdempotencyService(storage);
+    const lifecycle = new ParticipationLifecycleService(storage, notifications, idempotency, null, null);
+    requests = new BloodRequestsService(storage as any, notifications, lifecycle);
+    donors = new DonorsService(storage as any, notifications, lifecycle);
   });
 
   const addManagedDonor = (ownerUserId: number, overrides: Record<string, unknown> = {}) =>
@@ -52,32 +56,32 @@ describe('Donation lifecycle', () => {
     });
 
   /** Request scheduled by DONOR_OWNER through their managed donor. */
-  const scheduledRequest = () => {
+  const scheduledRequest = async () => {
     const donor = addManagedDonor(DONOR_OWNER);
     const request = addRequest();
-    requests.scheduleBloodRequest(request.id, DONOR_OWNER, new Date(Date.now() + 86_400_000));
+    await requests.scheduleBloodRequest(request.id, DONOR_OWNER, new Date(Date.now() + 86_400_000));
     return { donor, request };
   };
 
-  it('refuses receipt confirmation before the donor completed the donation', () => {
-    const { donor, request } = scheduledRequest();
+  it('refuses receipt confirmation before the donor completed the donation', async () => {
+    const { donor, request } = await scheduledRequest();
 
-    expect(() => requests.confirmReceipt(request.id, true, REQUESTER)).toThrow(ConflictException);
+    await expect(requests.confirmReceipt(request.id, true, REQUESTER)).rejects.toThrow(ConflictException);
     expect(storage.getBloodRequest(request.id)!.status).toBe('accepted');
     expect(storage.getDonor(donor.id)!.totalDonations).toBe(0);
     expect(storage.getDonor(donor.id)!.availabilityStatus).toBe('Available');
   });
 
-  it('lets only the owner of the accepted donor complete, and credits that donor', () => {
-    const { donor, request } = scheduledRequest();
+  it('lets only the owner of the accepted donor complete, and credits that donor', async () => {
+    const { donor, request } = await scheduledRequest();
     const decoy = addManagedDonor(OTHER_USER);
 
-    expect(() => requests.complete(request.id, OTHER_USER)).toThrow(ForbiddenException);
+    await expect(requests.complete(request.id, OTHER_USER)).rejects.toThrow(ForbiddenException);
     expect(storage.getBloodRequest(request.id)!.status).toBe('accepted');
 
-    const completed = requests.complete(request.id, DONOR_OWNER);
-    expect(completed.status).toBe('donation_completed');
-    expect(completed.fulfilledByDonorId).toBe(donor.id);
+    const completed = await requests.complete(request.id, DONOR_OWNER);
+    expect(completed!.status).toBe('donation_completed');
+    expect(completed!.fulfilledByDonorId).toBe(donor.id);
     expect(storage.getDonor(donor.id)!.totalDonations).toBe(1);
     expect(storage.getDonor(donor.id)!.availabilityStatus).toBe('Recently Donated');
     expect(storage.getDonor(donor.id)!.isAvailable).toBe(false);
@@ -85,60 +89,56 @@ describe('Donation lifecycle', () => {
     expect(storage.getBloodDonationByRequestId(request.id)!.status).toBe('completed');
   });
 
-  it('refuses to complete a request no donor has accepted', () => {
+  it('refuses to complete a request no donor has accepted', async () => {
     const request = addRequest();
-    expect(() => requests.complete(request.id, DONOR_OWNER)).toThrow(ConflictException);
+    await expect(requests.complete(request.id, DONOR_OWNER)).rejects.toThrow(ConflictException);
     expect(storage.getBloodRequest(request.id)!.status).toBe('active');
   });
 
-  it('confirms receipt once, after completion', () => {
-    const { request } = scheduledRequest();
-    requests.complete(request.id, DONOR_OWNER);
+  it('confirms receipt once, after completion', async () => {
+    const { request } = await scheduledRequest();
+    await requests.complete(request.id, DONOR_OWNER);
 
-    expect(() => requests.confirmReceipt(request.id, true, OTHER_USER)).toThrow(ForbiddenException);
-    const confirmed = requests.confirmReceipt(request.id, true, REQUESTER)!;
+    await expect(requests.confirmReceipt(request.id, true, OTHER_USER)).rejects.toThrow(ForbiddenException);
+    const confirmed = (await requests.confirmReceipt(request.id, true, REQUESTER))!;
     expect(confirmed.received).toBe(true);
     expect(confirmed.status).toBe('donation_completed');
-    expect(() => requests.confirmReceipt(request.id, true, REQUESTER)).toThrow(ConflictException);
+    await expect(requests.confirmReceipt(request.id, true, REQUESTER)).rejects.toThrow(ConflictException);
   });
 
-  it('reopens the request and uncounts the donation when not received', () => {
-    const { donor, request } = scheduledRequest();
-    requests.complete(request.id, DONOR_OWNER);
-
-    const reopened = requests.confirmReceipt(request.id, false, REQUESTER)!;
-    expect(reopened.status).toBe('active');
-    expect(reopened.acceptedByDonorId).toBeNull();
-    expect(reopened.fulfilledByDonorId).toBeNull();
-    expect(reopened.scheduledDate).toBeNull();
-    expect(storage.getDonor(donor.id)!.totalDonations).toBe(0);
+  it('rejects legacy deny-receipt when participation report exists', async () => {
+    const { request } = await scheduledRequest();
+    await requests.complete(request.id, DONOR_OWNER);
+    await expect(requests.confirmReceipt(request.id, false, REQUESTER)).rejects.toThrow(ConflictException);
   });
 
-  it('lists a request scheduled through a managed donor for its owner, with a pending donation', () => {
-    const { donor, request } = scheduledRequest();
+  it('lists a request scheduled through a managed donor for its owner, with a pending donation', async () => {
+    const { donor, request } = await scheduledRequest();
 
     expect(donors.getAcceptedRequests(DONOR_OWNER).map((r) => r.id)).toEqual([request.id]);
     expect(donors.getAcceptedRequests(OTHER_USER)).toEqual([]);
     expect(storage.getBloodDonationByRequestId(request.id)).toMatchObject({ donorId: donor.id, status: 'donation_pending' });
   });
 
-  it('keeps a request accepted by a managed donor in the owner accepted list', () => {
+  it('keeps a request accepted by a managed donor in the owner accepted list', async () => {
     const donor = addManagedDonor(DONOR_OWNER);
     const request = addRequest();
     requests.requestAnyAvailableDonor(request.id, REQUESTER, donor.id);
 
     expect(donors.getIncomingRequests(DONOR_OWNER).map((r) => r.id)).toEqual([request.id]);
-    donors.acceptIncomingRequest(DONOR_OWNER, request.id);
+    await donors.acceptIncomingRequest(DONOR_OWNER, request.id);
 
     expect(donors.getIncomingRequests(DONOR_OWNER)).toEqual([]);
     expect(donors.getAcceptedRequests(DONOR_OWNER).map((r) => r.id)).toEqual([request.id]);
     expect(storage.getBloodRequest(request.id)!.status).toBe('request_accepted');
   });
 
-  it('does not let a requester volunteer for their own request', () => {
+  it('does not let a requester volunteer for their own request', async () => {
     addManagedDonor(REQUESTER);
     const request = addRequest();
-    expect(() => requests.scheduleBloodRequest(request.id, REQUESTER, new Date())).toThrow(ForbiddenException);
+    await expect(requests.scheduleBloodRequest(request.id, REQUESTER, new Date())).rejects.toThrow(
+      ForbiddenException,
+    );
     expect(storage.getBloodRequest(request.id)!.status).toBe('active');
   });
 
@@ -180,7 +180,7 @@ describe('Donation lifecycle', () => {
   });
 
   it('removes the pending donation when a request is deleted', async () => {
-    const { request } = scheduledRequest();
+    const { request } = await scheduledRequest();
     await expect(requests.remove(request.id, OTHER_USER, 'user')).rejects.toThrow(ForbiddenException);
     await requests.remove(request.id, REQUESTER, 'user');
     expect(storage.getBloodRequest(request.id)).toBeUndefined();

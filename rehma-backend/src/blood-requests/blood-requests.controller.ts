@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards, Request } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, UseGuards, Request } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags, ApiBody } from '@nestjs/swagger';
 import { DonorCompleteDto } from './dto/donor-complete.dto';
 import { ConfirmReceiptDto } from './dto/confirm-receipt.dto';
@@ -80,10 +80,20 @@ export class BloodRequestsController {
   @Patch(':id/complete')
   @ApiOperation({ summary: 'Mark request as completed and attach donor' })
   @ApiBody({ type: CompleteBloodRequestDto })
-  complete(@Param('id') id: string, @Request() req: any, @Body() _body: CompleteBloodRequestDto) {
+  complete(
+    @Param('id') id: string,
+    @Request() req: any,
+    @Body() _body: CompleteBloodRequestDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
     // The body's donorId is accepted for older app versions but ignored: the
     // donation is credited to the donor who accepted the request.
-    return this.bloodRequestsService.complete(Number(id), Number(req.user?.sub), req.user?.role);
+    return this.bloodRequestsService.complete(
+      Number(id),
+      Number(req.user?.sub),
+      req.user?.role,
+      idempotencyKey,
+    );
   }
 
   @Patch(':id/donor-complete')
@@ -96,9 +106,21 @@ export class BloodRequestsController {
   @Post(':id/confirm-receipt')
   @ApiOperation({ summary: 'Requester confirms receipt of blood' })
   @ApiBody({ type: ConfirmReceiptDto })
-  confirmReceipt(@Param('id') id: string, @Request() req: any, @Body() dto: ConfirmReceiptDto) {
+  confirmReceipt(
+    @Param('id') id: string,
+    @Request() req: any,
+    @Body() dto: ConfirmReceiptDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
     const requesterId = Number(req.user?.sub);
-    return this.bloodRequestsService.confirmReceipt(Number(id), dto.received, requesterId);
+    return this.bloodRequestsService.confirmReceipt(
+      Number(id),
+      dto.received,
+      requesterId,
+      dto.unitsReceived,
+      dto.participationId,
+      idempotencyKey,
+    );
   }
 
   @Get(':id/match')
@@ -119,10 +141,19 @@ export class BloodRequestsController {
   @Post('schedule')
   @ApiOperation({ summary: 'Schedule a donation using requestId and scheduleDate from request body' })
   @ApiBody({ type: ScheduleBloodRequestDto })
-  schedule(@Request() req: any, @Body() dto: ScheduleBloodRequestDto) {
+  schedule(
+    @Request() req: any,
+    @Body() dto: ScheduleBloodRequestDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
     const userId = req.user?.sub;
     const scheduleDate = new Date(dto.scheduleDate);
-    return this.bloodRequestsService.scheduleBloodRequest(Number(dto.requestId), Number(userId), scheduleDate);
+    return this.bloodRequestsService.scheduleBloodRequest(
+      Number(dto.requestId),
+      Number(userId),
+      scheduleDate,
+      idempotencyKey,
+    );
   }
 
   @Delete(':id')

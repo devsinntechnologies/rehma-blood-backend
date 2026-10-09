@@ -1,6 +1,8 @@
 import { AppStorageService } from '../storage/app-storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { BloodRequestsService } from './blood-requests.service';
+import { IdempotencyService } from '../shared/idempotency.service';
+import { ParticipationLifecycleService } from './participation-lifecycle.service';
 
 class StubGateway {
   emitNotification() {}
@@ -18,7 +20,9 @@ describe('BloodRequestsService - requestAnyAvailableDonor', () => {
     await storage.onModuleInit();
     const gateway = new StubGateway();
     notifications = new NotificationsService(storage as any, gateway as any);
-    service = new BloodRequestsService(storage as any, notifications as any);
+    const idempotency = new IdempotencyService(storage);
+    const lifecycle = new ParticipationLifecycleService(storage, notifications, idempotency, null, null);
+    service = new BloodRequestsService(storage, notifications, lifecycle);
   });
 
   it('uses createdByUserId when donor.userId is null', () => {
@@ -74,7 +78,7 @@ describe('BloodRequestsService - requestAnyAvailableDonor', () => {
     expect(res.donor.bloodGroup).toBe('B+');
   });
 
-  it('scheduleBloodRequest allows donor created by user but not yet claimed', () => {
+  it('scheduleBloodRequest allows donor created by user but not yet claimed', async () => {
     storage.addDonor({
       fullName: 'Unclaimed Created Donor',
       email: 'unclaimed@example.com',
@@ -96,14 +100,14 @@ describe('BloodRequestsService - requestAnyAvailableDonor', () => {
     });
 
     const scheduleDate = new Date('2026-05-20T10:00:00.000Z');
-    const result = service.scheduleBloodRequest(req.id, 1, scheduleDate);
+    const result = await service.scheduleBloodRequest(req.id, 1, scheduleDate);
 
     expect(result.bloodRequest.status).toBe('accepted');
     expect(result.donor.id).toBeDefined();
     expect(result.donor.bloodGroup).toBe('A+');
   });
 
-  it('scheduleBloodRequest ignores donor claimed by another user', () => {
+  it('scheduleBloodRequest ignores donor claimed by another user', async () => {
     const claimedDonor = storage.addDonor({
       fullName: 'Claimed Donor',
       email: 'claimed@example.com',
@@ -128,7 +132,9 @@ describe('BloodRequestsService - requestAnyAvailableDonor', () => {
 
     const scheduleDate = new Date('2026-05-20T10:00:00.000Z');
 
-    expect(() => service.scheduleBloodRequest(req.id, 1, scheduleDate)).toThrow('No available donor matching the blood request');
+    await expect(service.scheduleBloodRequest(req.id, 1, scheduleDate)).rejects.toThrow(
+      'No available donor matching the blood request',
+    );
   });
 
   it('findMyScheduledRequests returns only scheduled blood requests for the authenticated user', () => {

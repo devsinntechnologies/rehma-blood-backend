@@ -1,6 +1,8 @@
 import { AppStorageService } from '../storage/app-storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { DonorsService } from './donors.service';
+import { IdempotencyService } from '../shared/idempotency.service';
+import { ParticipationLifecycleService } from '../blood-requests/participation-lifecycle.service';
 
 class StubGateway {
   emitNotification() {}
@@ -18,7 +20,9 @@ describe('DonorsService - getCreatedDonors', () => {
     await storage.onModuleInit();
     const gateway = new StubGateway();
     notifications = new NotificationsService(storage as any, gateway as any);
-    service = new DonorsService(storage as any, notifications as any);
+    const idempotency = new IdempotencyService(storage);
+    const lifecycle = new ParticipationLifecycleService(storage, notifications, idempotency, null, null);
+    service = new DonorsService(storage, notifications, lifecycle);
   });
 
   it('keeps multiple phone-less donor records created by the same user', () => {

@@ -3,12 +3,15 @@ import { CreateBloodRequestDto } from './dto/create-blood-request.dto';
 import { UpdateBloodRequestDto } from './dto/update-blood-request.dto';
 import { AppStorageService, IN_PROGRESS_REQUEST_STATUSES } from '../storage/app-storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ParticipationLifecycleService } from './participation-lifecycle.service';
+import { summarizeRequestUnits } from './unit-accounting.service';
 
 @Injectable()
 export class BloodRequestsService {
   constructor(
     private readonly appStorageService: AppStorageService,
     private readonly notificationsService: NotificationsService,
+    private readonly participationLifecycle: ParticipationLifecycleService,
   ) {}
 
   create(createBloodRequestDto: CreateBloodRequestDto, userId?: number) {
@@ -21,6 +24,9 @@ export class BloodRequestsService {
     const bloodRequest = this.appStorageService.addBloodRequest({
       ...createBloodRequestDto,
       requesterUserId: userId ?? null,
+      deadlineAt: createBloodRequestDto.deadlineAt
+        ? new Date(createBloodRequestDto.deadlineAt)
+        : null,
     });
 
     const message = `New ${bloodRequest.urgency} blood request for ${bloodRequest.bloodGroup} has been created`;
@@ -164,11 +170,18 @@ export class BloodRequestsService {
   }
 
   async update(id: number, updateBloodRequestDto: UpdateBloodRequestDto, userRole?: string) {
-    // Writes fields (including status) directly, bypassing the donation lifecycle.
     if (userRole !== 'superadmin') {
       throw new ForbiddenException('Only a Super Admin can edit a blood request');
     }
     await this.findOne(id);
+    const guarded = ['status', 'acceptedByDonorId', 'acceptedByDonorName', 'acceptedAt', 'fulfilledByDonorId', 'received'];
+    for (const field of guarded) {
+      if ((updateBloodRequestDto as Record<string, unknown>)[field] !== undefined) {
+        throw new ForbiddenException(
+          `Use admin transition or participation endpoints to change ${field}, not PATCH /blood-requests/:id`,
+        );
+      }
+    }
     const bloodRequest = this.appStorageService.updateBloodRequest(id, updateBloodRequestDto);
     if (!bloodRequest) {
       throw new NotFoundException(`Blood request with ID ${id} not found`);
@@ -203,57 +216,69 @@ export class BloodRequestsService {
    * Only a request a donor has accepted or scheduled can be completed, and the
    * donation is always credited to that donor, never to an id from the client.
    */
-  complete(id: number, userId: number, userRole?: string) {
+  async complete(
+    id: number,
+    userId: number,
+    userRole?: string,
+    idempotencyKey?: string,
+  ): Promise<import('../storage/app-storage.service').BloodRequestRecord | undefined> {
     const existing = this.appStorageService.getBloodRequest(id);
     if (!existing) {
       throw new NotFoundException(`Blood request with ID ${id} not found`);
     }
-    if (!IN_PROGRESS_REQUEST_STATUSES.includes(existing.status) || existing.acceptedByDonorId == null) {
-      throw new ConflictException('Only a request a donor has accepted or scheduled can be completed');
-    }
-    const acceptedDonor = this.appStorageService.getDonor(existing.acceptedByDonorId);
-    if (!acceptedDonor) {
-      throw new NotFoundException('The donor who accepted this request no longer exists');
-    }
-    if (userRole !== 'superadmin' && this.appStorageService.getDonorOwnerUserId(acceptedDonor) !== userId) {
+
+    const participations = this.appStorageService.listParticipationsForRequest(id);
+    const activeParticipations = participations.filter((p) =>
+      ['accepted', 'scheduled'].includes(p.status),
+    );
+    const ownedActive = activeParticipations.find((p) => {
+      if (userRole === 'superadmin') return p.donorId === existing.acceptedByDonorId;
+      const donor = this.appStorageService.getDonor(p.donorId);
+      return donor && this.appStorageService.getDonorOwnerUserId(donor) === userId;
+    });
+
+    if (!ownedActive && activeParticipations.length > 0 && userRole !== 'superadmin') {
       throw new ForbiddenException('Only the donor who accepted this request can complete it');
     }
 
-    const creditedDonorId = acceptedDonor.id;
-    const bloodRequest = this.appStorageService.completeBloodRequest(id, creditedDonorId);
-    if (!bloodRequest) {
-      throw new NotFoundException(`Blood request with ID ${id} not found`);
+    if (ownedActive) {
+      const remaining = Math.max(1, ownedActive.unitsCommitted - ownedActive.unitsReported);
+      const report = await this.participationLifecycle.reportDonation(
+        ownedActive.id,
+        { userId, role: userRole === 'superadmin' ? 'superadmin' : 'user' },
+        remaining,
+        idempotencyKey,
+      );
+      const payload = report.body as { request?: import('../storage/app-storage.service').BloodRequestRecord };
+      return payload.request ?? this.appStorageService.getBloodRequest(id);
     }
 
-    this.notificationsService.notifySuperAdmins({
-      type: 'blood_request_completed',
-      title: 'Blood request completed',
-      message: `Blood request #${bloodRequest.id} was completed by donor #${creditedDonorId}.`,
-      entityType: 'blood_request',
-      entityId: bloodRequest.id,
-      metadata: { bloodRequest, donorId: creditedDonorId },
-    });
-
-    if (bloodRequest.requesterUserId) {
-      this.notificationsService.create({
-        recipient: { role: 'user', userId: bloodRequest.requesterUserId },
-        type: 'blood_request_completed',
-        title: 'Blood request completed',
-        message: `Your blood request #${bloodRequest.id} has been completed.`,
-        entityType: 'blood_request',
-        entityId: bloodRequest.id,
-        metadata: { bloodRequest, donorId: creditedDonorId },
-      });
+    if (existing.requiredUnits > 1) {
+      throw new ConflictException(
+        'Use POST /participations/:id/report-donation with explicit units for multi-unit requests',
+      );
     }
 
-    return bloodRequest;
+    if (!IN_PROGRESS_REQUEST_STATUSES.includes(existing.status) || existing.acceptedByDonorId == null) {
+      throw new ConflictException('Only a request a donor has accepted or scheduled can be completed');
+    }
+    throw new ConflictException(
+      'No active participation found — use participation report endpoint (client upgrade required)',
+    );
   }
 
   /**
    * The requester confirms (or denies) receiving the blood. Only possible once
    * the donor has completed the donation, and only once.
    */
-  confirmReceipt(id: number, received: boolean, requesterId: number) {
+  async confirmReceipt(
+    id: number,
+    received: boolean,
+    requesterId: number,
+    unitsReceived?: number,
+    participationId?: number,
+    idempotencyKey?: string,
+  ) {
     const bloodRequest = this.appStorageService.getBloodRequest(id);
     if (!bloodRequest) {
       throw new NotFoundException(`Blood request with ID ${id} not found`);
@@ -261,6 +286,33 @@ export class BloodRequestsService {
     if (bloodRequest.requesterUserId !== requesterId) {
       throw new ForbiddenException('Only the requester can confirm receipt');
     }
+
+    if (bloodRequest.requiredUnits > 1 && participationId == null) {
+      throw new ConflictException(
+        'Multi-unit requests require participationId and unitsReceived — use POST /participations/:id/confirm-receipt',
+      );
+    }
+
+    const participations = this.appStorageService.listParticipationsForRequest(id);
+    const target =
+      (participationId != null ? participations.find((p) => p.id === participationId) : undefined) ??
+      participations.find((p) => ['reported', 'partially_confirmed'].includes(p.status));
+
+    if (target) {
+      if (!received) {
+        throw new ConflictException('Use dispute flow for reported donations that were not received');
+      }
+      const units = Math.max(1, unitsReceived ?? target.unitsReported - target.unitsConfirmed);
+      const result = await this.participationLifecycle.confirmReceipt(
+        target.id,
+        { userId: requesterId, role: 'user' },
+        units,
+        idempotencyKey,
+      );
+      const payload = result.body as { request?: import('../storage/app-storage.service').BloodRequestRecord };
+      return payload.request ?? this.appStorageService.getBloodRequest(id);
+    }
+
     if (bloodRequest.status !== 'donation_completed') {
       throw new ConflictException('The donor has not completed this donation yet');
     }
@@ -272,8 +324,6 @@ export class BloodRequestsService {
       return this.appStorageService.updateBloodRequest(id, { received: true, receivedAt: new Date() });
     }
 
-    // Not received: reopen the request so another donor can be found. Moving it
-    // off donation_completed also stops counting the donation for the donor.
     this.appStorageService.updateBloodRequestStatus(id, 'active');
     return this.appStorageService.updateBloodRequest(id, {
       received: false,
@@ -334,6 +384,17 @@ export class BloodRequestsService {
     if (bloodRequest.status !== 'active' && bloodRequest.status !== 'request_pending') {
       throw new ForbiddenException('Only active or pending blood requests can be requested');
     }
+    if (!this.appStorageService.isRequestAcceptingNewCommitments(bloodRequest)) {
+      throw new ConflictException('This request is not accepting new invitations');
+    }
+
+    const maxOutstanding = Number(process.env.INVITE_MAX_OUTSTANDING ?? 3);
+    const outstanding = this.appStorageService
+      .listParticipationsForRequest(id)
+      .filter((p) => p.status === 'invited').length;
+    if (outstanding >= maxOutstanding) {
+      throw new ConflictException('Maximum outstanding invitations reached for this request');
+    }
 
     const matchingDonors = this.appStorageService
       .listDonors()
@@ -381,6 +442,14 @@ export class BloodRequestsService {
       throw new NotFoundException(`Blood request with ID ${id} not found`);
     }
 
+    const windowMs = bloodRequest.urgency === 'urgent' ? 45 * 60_000 : 4 * 60 * 60_000;
+    const participation = this.participationLifecycle.createInviteParticipation(
+      updated,
+      donor.id,
+      donorOwnerUserId ?? 0,
+      new Date(Date.now() + windowMs),
+    );
+
     if (donorOwnerUserId != null) {
       this.notificationsService.create({
         // Donor owners log in to the app as users.
@@ -390,7 +459,12 @@ export class BloodRequestsService {
         message: `A blood request for ${bloodRequest.bloodGroup} is waiting for you.`,
         entityType: 'blood_request',
         entityId: updated.id,
-        metadata: { bloodRequest: updated, donor },
+        metadata: {
+          bloodRequest: updated,
+          donor,
+          participationId: participation.id,
+          deepLink: `rehma://request/${updated.id}?p=${participation.id}`,
+        },
       });
     }
 
@@ -437,38 +511,20 @@ export class BloodRequestsService {
     };
   }
 
-  scheduleBloodRequest(id: number, userId: number, scheduleDate: Date) {
-    const bloodRequest = this.appStorageService.getBloodRequest(id);
-    if (!bloodRequest) {
+  async scheduleBloodRequest(id: number, userId: number, scheduleDate: Date, idempotencyKey?: string) {
+    const result = await this.participationLifecycle.scheduleForVolunteerDonor(id, userId, scheduleDate, idempotencyKey);
+    const payload = result.body as {
+      bloodRequest?: import('../storage/app-storage.service').BloodRequestRecord;
+      donor?: { id: number; fullName: string };
+    };
+    const updated = payload.bloodRequest ?? this.appStorageService.getBloodRequest(id);
+    if (!updated) {
       throw new NotFoundException(`Blood request with ID ${id} not found`);
     }
 
-    if (bloodRequest.status !== 'active' && bloodRequest.status !== 'request_pending') {
-      throw new ForbiddenException('Only active or pending blood requests can be scheduled');
-    }
-    if (bloodRequest.requesterUserId === userId) {
-      throw new ForbiddenException("You can't donate to your own blood request");
-    }
-
-    const updated = this.appStorageService.scheduleBloodRequest(id, userId, scheduleDate);
-    if (!updated) {
-      throw new ForbiddenException('No available donor matching the blood request');
-    }
-
-    // Same as accepting an incoming request: the donation is pending until the donor completes it.
-    const scheduledDonor = this.appStorageService.getDonor(updated.acceptedByDonorId!);
-    if (scheduledDonor) {
-      this.appStorageService.upsertBloodDonationForRequest({
-        requestId: updated.id,
-        donorId: scheduledDonor.id,
-        donorName: scheduledDonor.fullName,
-        bloodGroup: updated.bloodGroup,
-        status: 'donation_pending',
-      });
-    }
-
-    // Fetch donor and requester details for response
-    const donor = this.appStorageService.getDonor(updated.acceptedByDonorId!);
+    const donor =
+      this.appStorageService.getDonor(updated.acceptedByDonorId!) ??
+      (payload.donor ? this.appStorageService.getDonor(payload.donor.id) : undefined);
     const requester = updated.requesterUserId ? this.appStorageService.getUserById(updated.requesterUserId) : null;
 
     this.notificationsService.notifySuperAdmins({

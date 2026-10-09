@@ -5,6 +5,12 @@ import { StorageModule } from '../storage/storage.module';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsGateway } from './notifications.gateway';
 import { NotificationsService } from './notifications.service';
+import {
+  CompositePushDeliveryProvider,
+  MockPushDeliveryProvider,
+  PushDeliveryService,
+} from './push-delivery.service';
+import { FcmPushDeliveryProvider } from './fcm-push-delivery.provider';
 
 @Global()
 @Module({
@@ -20,7 +26,20 @@ import { NotificationsService } from './notifications.service';
     }),
   ],
   controllers: [NotificationsController],
-  providers: [NotificationsGateway, NotificationsService],
-  exports: [NotificationsService, NotificationsGateway],
+  providers: [
+    NotificationsGateway,
+    NotificationsService,
+    MockPushDeliveryProvider,
+    FcmPushDeliveryProvider,
+    CompositePushDeliveryProvider,
+    PushDeliveryService,
+  ],
+  exports: [
+    NotificationsService,
+    NotificationsGateway,
+    PushDeliveryService,
+    MockPushDeliveryProvider,
+    CompositePushDeliveryProvider,
+  ],
 })
 export class NotificationsModule {}

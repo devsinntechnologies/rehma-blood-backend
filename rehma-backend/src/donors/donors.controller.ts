@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards, Request } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, UseGuards, Request } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags, ApiBody } from '@nestjs/swagger';
 import { DonorsService } from './donors.service';
 import { CreateDonorDto } from './dto/create-donor.dto';
@@ -47,6 +47,12 @@ export class DonorsController {
     return this.donorsService.getAcceptedRequests(Number(req.user.sub));
   }
 
+  @Get('my-commitments')
+  @ApiOperation({ summary: 'Active participation commitments for donors you own (commitment card data)' })
+  getMyCommitments(@Request() req: any) {
+    return this.donorsService.getMyCommitments(Number(req.user.sub));
+  }
+
   @Get('incoming-requests/:id')
   @ApiOperation({ summary: 'Get an incoming blood request by ID for the authenticated donor' })
   getIncomingRequestById(@Param('id') id: string, @Request() req: any) {
@@ -55,8 +61,28 @@ export class DonorsController {
 
   @Patch('incoming-requests/:id/accept')
   @ApiOperation({ summary: 'Accept an incoming blood request for the authenticated donor' })
-  acceptIncomingRequest(@Param('id') id: string, @Request() req: any) {
-    return this.donorsService.acceptIncomingRequest(Number(req.user.sub), Number(id));
+  acceptIncomingRequest(
+    @Param('id') id: string,
+    @Body() body: { unitsCommitted?: number },
+    @Request() req: any,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    return this.donorsService.acceptIncomingRequest(
+      Number(req.user.sub),
+      Number(id),
+      idempotencyKey,
+      body?.unitsCommitted,
+    );
+  }
+
+  @Patch('incoming-requests/:id/decline')
+  @ApiOperation({ summary: 'Decline an incoming blood request (cannot help)' })
+  declineIncomingRequest(
+    @Param('id') id: string,
+    @Request() req: any,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    return this.donorsService.declineIncomingRequest(Number(req.user.sub), Number(id), idempotencyKey);
   }
 
   @Get(':id/promo')

@@ -13,6 +13,11 @@ import { ChatConversation } from './entities/chat-conversation.entity';
 import { ChatMessage } from './entities/chat-message.entity';
 import { ChatAttachment } from './entities/chat-attachment.entity';
 import { PasswordResetToken } from './entities/password-reset-token.entity';
+import { RequestParticipation } from './entities/request-participation.entity';
+import { IdempotencyRecordEntity } from './entities/idempotency-record.entity';
+import { NotificationEvent } from './entities/notification-event.entity';
+import { DeviceToken } from './entities/device-token.entity';
+import { ParticipationAudit } from './entities/participation-audit.entity';
 
 const ENTITIES = [
   SuperAdmin,
@@ -26,6 +31,11 @@ const ENTITIES = [
   ChatMessage,
   ChatAttachment,
   PasswordResetToken,
+  RequestParticipation,
+  IdempotencyRecordEntity,
+  NotificationEvent,
+  DeviceToken,
+  ParticipationAudit,
 ];
 
 @Module({
@@ -41,7 +51,7 @@ const ENTITIES = [
         password: configService.get<string>('DATABASE_PASSWORD', 'postgres'),
         database: configService.get<string>('DATABASE_NAME', 'rehma_blood'),
         entities: ENTITIES,
-        synchronize: true, // Set to false in production
+        synchronize: configService.get<string>('TYPEORM_SYNCHRONIZE', 'false') === 'true',
       }),
     }),
     TypeOrmModule.forFeature(ENTITIES),

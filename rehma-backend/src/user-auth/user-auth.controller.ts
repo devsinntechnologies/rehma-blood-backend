@@ -6,6 +6,7 @@ import { LoginUserDto } from './dtos/login-user.dto';
 import { UpdateUserProfileDto } from './dtos/update-user-profile.dto';
 import { ForgotPasswordDto } from '../auth/dto/forgot-password.dto';
 import { JwtAuthGuard } from '../shared/guards/jwt-auth.guard';
+import { RegisterDeviceTokenDto, UnregisterDeviceTokenDto } from './dtos/device-token.dto';
 
 @ApiTags('User Auth')
 @Controller('user-auth')
@@ -56,5 +57,21 @@ export class UserAuthController {
   @ApiOperation({ summary: 'Get all donor profiles linked to current user' })
   async getMyDonorProfile(@Request() req: any) {
     return this.userAuthService.getMyDonorProfile(Number(req.user.sub));
+  }
+
+  @Post('device-token')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('jwt')
+  @ApiOperation({ summary: 'Register or refresh a push notification device token for the current user' })
+  async registerDeviceToken(@Request() req: any, @Body() dto: RegisterDeviceTokenDto) {
+    return this.userAuthService.registerDeviceToken(Number(req.user.sub), dto.platform, dto.token);
+  }
+
+  @Post('device-token/unregister')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('jwt')
+  @ApiOperation({ summary: 'Deactivate a device token (logout / push denied)' })
+  async unregisterDeviceToken(@Request() req: any, @Body() dto: UnregisterDeviceTokenDto) {
+    return this.userAuthService.unregisterDeviceToken(Number(req.user.sub), dto.token);
   }
 }

@@ -6,6 +6,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { RegisterUserDto } from './dtos/register-user.dto';
 import { LoginUserDto } from './dtos/login-user.dto';
 import { UpdateUserProfileDto } from './dtos/update-user-profile.dto';
+import { PasswordResetService } from '../shared/password-reset.service';
+import { ParticipationLifecycleService } from '../blood-requests/participation-lifecycle.service';
 
 @Injectable()
 export class UserAuthService {
@@ -13,6 +15,8 @@ export class UserAuthService {
     private readonly storageService: AppStorageService,
     private readonly jwtService: JwtService,
     private readonly notificationsService: NotificationsService,
+    private readonly passwordResetService: PasswordResetService,
+    private readonly participationLifecycle: ParticipationLifecycleService,
   ) {}
 
   async register(input: RegisterUserDto): Promise<{ accessToken: string; user: Partial<UserRecord>; donorProfiles: unknown[] }> {
@@ -69,6 +73,14 @@ export class UserAuthService {
     }
 
     // Notify the original creator if ownership was transferred
+    if (phoneMatchedDonor) {
+      this.participationLifecycle.transferOwnershipForDonorClaim(
+        phoneMatchedDonor.id,
+        user.id,
+        phoneMatchedDonor.createdByUserId ?? undefined,
+      );
+    }
+
     if (phoneMatchedDonor && phoneMatchedDonor.createdByUserId) {
       this.notificationsService.create({
         recipient: {
@@ -108,6 +120,11 @@ export class UserAuthService {
         if (!claimedDonor) {
           throw new BadRequestException('Unable to claim promo donor profile');
         }
+        this.participationLifecycle.transferOwnershipForDonorClaim(
+          donor.id,
+          user.id,
+          donor.createdByUserId ?? undefined,
+        );
 
         // Notify the original creator if ownership was transferred via promo code
         if (donor.createdByUserId) {
@@ -188,18 +205,11 @@ export class UserAuthService {
     };
   }
 
-  async forgotPassword(email: string): Promise<{ message: string; resetToken?: string }> {
-    const user = this.storageService.getUserByEmail(email);
-
-    if (!user) {
-      return { message: 'If an account exists with this email, a password reset link will be sent.' };
-    }
-
-    const resetToken = this.storageService.generateResetToken(email, 'user');
-
+  async forgotPassword(email: string): Promise<{ message: string; passwordResetAvailable: boolean }> {
+    const result = this.passwordResetService.requestReset(email, 'user');
     return {
-      message: 'Password reset token generated. Use this token to reset your password.',
-      resetToken,
+      message: this.passwordResetService.genericMessage(),
+      passwordResetAvailable: this.passwordResetService.isEmailDeliveryConfigured() && result.delivered,
     };
   }
 
@@ -281,5 +291,18 @@ export class UserAuthService {
       lastBloodDonation: user.lastBloodDonation,
       role: user.role,
     };
+  }
+
+  registerDeviceToken(userId: number, platform: string, token: string) {
+    const row = this.storageService.upsertDeviceToken(userId, platform, token);
+    return { token: row.token, platform: row.platform, active: row.active };
+  }
+
+  unregisterDeviceToken(userId: number, token: string) {
+    const owned = this.storageService.listDeviceTokensForUser(userId).some((t) => t.token === token);
+    if (owned) {
+      this.storageService.deactivateDeviceToken(token);
+    }
+    return { message: 'Device token removed' };
   }
 }

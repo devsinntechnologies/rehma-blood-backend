@@ -53,7 +53,24 @@ export type BloodRequestRecord = {
   notes?: string | null;
   latitude: number;
   longitude: number;
-  status: 'active' | 'request_pending' | 'request_accepted' | 'accepted' | 'on_the_way' | 'arrived_at_hospital' | 'donation_completed';
+  status:
+    | 'active'
+    | 'request_pending'
+    | 'request_accepted'
+    | 'accepted'
+    | 'on_the_way'
+    | 'arrived_at_hospital'
+    | 'donation_completed'
+    | 'cancelled';
+  hospitalName?: string | null;
+  deadlineAt?: Date | null;
+  contactPhone?: string | null;
+  contactEmail?: string | null;
+  matchingStopped?: boolean;
+  cancelReason?: string | null;
+  cancelledAt?: Date | null;
+  inviteRound?: number;
+  legacyMigrationVersion?: number;
   requestedToDonorId?: number | null;
   requestedToDonorName?: string | null;
   acceptedByDonorId?: number | null;
@@ -134,6 +151,90 @@ export type ResetTokenRecord = {
   used: boolean;
 };
 
+export type RequestParticipationRecord = {
+  id: number;
+  requestId: number;
+  donorId: number;
+  ownerUserId: number;
+  historicalOwnerUserId?: number | null;
+  status:
+    | 'invited'
+    | 'declined'
+    | 'expired'
+    | 'available_later'
+    | 'accepted'
+    | 'scheduled'
+    | 'withdrawn'
+    | 'reported'
+    | 'partially_confirmed'
+    | 'receipt_confirmed'
+    | 'disputed'
+    | 'resolved_confirmed'
+    | 'resolved_rejected'
+    | 'cancelled'
+    | 'no_show'
+    | 'unsuccessful';
+  responseType?: 'can_help' | 'cannot_help' | 'available_later' | null;
+  unitsCommitted: number;
+  unitsReported: number;
+  unitsConfirmed: number;
+  legacyMigrated: boolean;
+  needsAdminReconciliation: boolean;
+  quantityConfidence: 'exact' | 'unknown_legacy' | 'admin_reconciled';
+  offeredAt?: Date | null;
+  agreedAt?: Date | null;
+  inviteExpiresAt?: Date | null;
+  reportedAt?: Date | null;
+  receiptConfirmedAt?: Date | null;
+  disputeReason?: string | null;
+  version: number;
+  lastEventId?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type IdempotencyStoreRecord = {
+  key: string;
+  actorUserId: number;
+  actorRole: string;
+  operation: string;
+  requestBodyHash: string;
+  statusCode: number;
+  responseBody: Record<string, unknown>;
+  createdAt: Date;
+};
+
+export type NotificationEventRecord = {
+  eventId: string;
+  participationId?: number | null;
+  requestId?: number | null;
+  type: string;
+  idempotencyKey?: string | null;
+  createdAt: Date;
+};
+
+export type DeviceTokenRecord = {
+  token: string;
+  userId: number;
+  platform: string;
+  active: boolean;
+  updatedAt: Date;
+};
+
+export type ParticipationAuditRecord = {
+  id: number;
+  participationId?: number | null;
+  requestId: number;
+  actorUserId: number;
+  actorRole: string;
+  action: string;
+  reason?: string | null;
+  fromStatus?: string | null;
+  toStatus?: string | null;
+  metadata?: Record<string, unknown> | null;
+  createdAt: Date;
+};
+
 export type ChatParticipantRecord = {
   role: 'superadmin' | 'donor' | 'user';
   userId: number;
@@ -208,6 +309,11 @@ export type StorageState = {
   chatAttachments: ChatAttachmentRecord[];
   users: UserRecord[];
   resetTokens: ResetTokenRecord[];
+  requestParticipations: RequestParticipationRecord[];
+  idempotencyRecords: IdempotencyStoreRecord[];
+  notificationEvents: NotificationEventRecord[];
+  deviceTokens: DeviceTokenRecord[];
+  participationAudits: ParticipationAuditRecord[];
 };
 
 // Methods that don't touch application data, so calling them needn't trigger a save.
@@ -248,6 +354,11 @@ export class AppStorageService implements OnModuleInit {
   private chatAttachments: ChatAttachmentRecord[] = [];
   private users: UserRecord[] = [];
   private resetTokens: ResetTokenRecord[] = [];
+  private requestParticipations: RequestParticipationRecord[] = [];
+  private idempotencyRecords: IdempotencyStoreRecord[] = [];
+  private notificationEvents: NotificationEventRecord[] = [];
+  private deviceTokens: DeviceTokenRecord[] = [];
+  private participationAudits: ParticipationAuditRecord[] = [];
 
   private donorId = 1;
   private requestId = 1;
@@ -257,6 +368,8 @@ export class AppStorageService implements OnModuleInit {
   private chatMessageId = 1;
   private chatAttachmentId = 1;
   private notificationId = 1;
+  private participationId = 1;
+  private participationAuditId = 1;
 
   private changeListener?: () => void;
 
@@ -295,6 +408,11 @@ export class AppStorageService implements OnModuleInit {
       chatAttachments: this.chatAttachments,
       users: this.users,
       resetTokens: this.resetTokens,
+      requestParticipations: this.requestParticipations,
+      idempotencyRecords: this.idempotencyRecords,
+      notificationEvents: this.notificationEvents,
+      deviceTokens: this.deviceTokens,
+      participationAudits: this.participationAudits,
     };
   }
 
@@ -309,6 +427,11 @@ export class AppStorageService implements OnModuleInit {
     this.chatAttachments = state.chatAttachments;
     this.users = state.users;
     this.resetTokens = state.resetTokens;
+    this.requestParticipations = state.requestParticipations ?? [];
+    this.idempotencyRecords = state.idempotencyRecords ?? [];
+    this.notificationEvents = state.notificationEvents ?? [];
+    this.deviceTokens = state.deviceTokens ?? [];
+    this.participationAudits = state.participationAudits ?? [];
 
     // Messages embed their attachment objects; re-link them so both views share the same records.
     const attachmentsByMessage = new Map<number, ChatAttachmentRecord[]>();
@@ -332,6 +455,8 @@ export class AppStorageService implements OnModuleInit {
     this.chatMessageId = nextId(this.chatMessages, this.chatMessageId);
     this.chatAttachmentId = nextId(this.chatAttachments, this.chatAttachmentId);
     this.notificationId = nextId(this.notifications, this.notificationId);
+    this.participationId = nextId(this.requestParticipations, this.participationId);
+    this.participationAuditId = nextId(this.participationAudits, this.participationAuditId);
   }
 
   async onModuleInit(): Promise<void> {
@@ -722,6 +847,9 @@ export class AppStorageService implements OnModuleInit {
       updatedAt: new Date(),
     });
 
+    const previousOwner = donor.createdByUserId ?? null;
+    this.transferParticipationOwnershipForDonor(donorId, userId, previousOwner ?? undefined);
+
     return donor;
   }
 
@@ -834,6 +962,7 @@ export class AppStorageService implements OnModuleInit {
       on_the_way: 4,
       arrived_at_hospital: 5,
       donation_completed: 6,
+      cancelled: 7,
     };
 
     return this.bloodRequests
@@ -891,6 +1020,10 @@ export class AppStorageService implements OnModuleInit {
     notes?: string | null;
     latitude: number;
     longitude: number;
+    hospitalName?: string | null;
+    deadlineAt?: Date | null;
+    contactPhone?: string | null;
+    contactEmail?: string | null;
   }): BloodRequestRecord {
     const now = new Date();
     const bloodRequest: BloodRequestRecord = {
@@ -916,6 +1049,15 @@ export class AppStorageService implements OnModuleInit {
       fulfilledByDonorName: null,
       received: false,
       receivedAt: null,
+      hospitalName: input.hospitalName ?? null,
+      deadlineAt: input.deadlineAt ?? null,
+      contactPhone: input.contactPhone ?? null,
+      contactEmail: input.contactEmail ?? null,
+      matchingStopped: false,
+      cancelReason: null,
+      cancelledAt: null,
+      inviteRound: 0,
+      legacyMigrationVersion: 0,
       createdAt: now,
       updatedAt: now,
     };
@@ -1688,5 +1830,156 @@ export class AppStorageService implements OnModuleInit {
     }
 
     return { success: false };
+  }
+
+  // ── Request participations ─────────────────────────────────────────────
+
+  listParticipationsForRequest(requestId: number): RequestParticipationRecord[] {
+    return this.requestParticipations.filter((p) => p.requestId === requestId);
+  }
+
+  listInvitedParticipationsPastExpiry(asOf: Date = new Date()): RequestParticipationRecord[] {
+    return this.requestParticipations.filter(
+      (p) =>
+        p.status === 'invited' &&
+        p.inviteExpiresAt != null &&
+        new Date(p.inviteExpiresAt).getTime() <= asOf.getTime(),
+    );
+  }
+
+  getParticipation(id: number): RequestParticipationRecord | undefined {
+    return this.requestParticipations.find((p) => p.id === id);
+  }
+
+  listActiveParticipationsForOwner(userId: number): RequestParticipationRecord[] {
+    const terminal = new Set([
+      'declined',
+      'expired',
+      'withdrawn',
+      'receipt_confirmed',
+      'resolved_confirmed',
+      'resolved_rejected',
+      'cancelled',
+      'no_show',
+      'unsuccessful',
+    ]);
+    return this.requestParticipations.filter((p) => p.ownerUserId === userId && !terminal.has(p.status));
+  }
+
+  addParticipation(
+    input: Omit<RequestParticipationRecord, 'id' | 'createdAt' | 'updatedAt' | 'version'> & { version?: number },
+  ): RequestParticipationRecord {
+    const now = new Date();
+    const record: RequestParticipationRecord = {
+      ...input,
+      id: this.participationId++,
+      version: input.version ?? 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.requestParticipations.push(record);
+    return record;
+  }
+
+  updateParticipation(
+    id: number,
+    partial: Partial<Omit<RequestParticipationRecord, 'id' | 'createdAt'>>,
+    expectedVersion?: number,
+  ): RequestParticipationRecord | undefined {
+    const row = this.getParticipation(id);
+    if (!row) return undefined;
+    if (expectedVersion != null && row.version !== expectedVersion) {
+      return undefined;
+    }
+    Object.assign(row, definedOnly(partial), { version: row.version + 1, updatedAt: new Date() });
+    return row;
+  }
+
+  transferParticipationOwnershipForDonor(donorId: number, newOwnerUserId: number, previousOwnerUserId?: number): number {
+    let count = 0;
+    const active = new Set(['invited', 'available_later', 'accepted', 'scheduled', 'reported', 'partially_confirmed', 'disputed']);
+    for (const p of this.requestParticipations) {
+      if (p.donorId !== donorId || !active.has(p.status)) continue;
+      if (previousOwnerUserId != null && p.ownerUserId !== previousOwnerUserId) continue;
+      p.historicalOwnerUserId = p.ownerUserId;
+      p.ownerUserId = newOwnerUserId;
+      p.updatedAt = new Date();
+      p.version += 1;
+      count += 1;
+    }
+    return count;
+  }
+
+  addParticipationAudit(input: Omit<ParticipationAuditRecord, 'id' | 'createdAt'>): ParticipationAuditRecord {
+    const row: ParticipationAuditRecord = {
+      ...input,
+      id: this.participationAuditId++,
+      createdAt: new Date(),
+    };
+    this.participationAudits.push(row);
+    return row;
+  }
+
+  findIdempotency(key: string): IdempotencyStoreRecord | undefined {
+    return this.idempotencyRecords.find((r) => r.key === key);
+  }
+
+  saveIdempotency(record: IdempotencyStoreRecord): IdempotencyStoreRecord {
+    const existing = this.findIdempotency(record.key);
+    if (existing) return existing;
+    this.idempotencyRecords.push(record);
+    return record;
+  }
+
+  findNotificationEventByIdempotency(idempotencyKey: string): NotificationEventRecord | undefined {
+    return this.notificationEvents.find((e) => e.idempotencyKey === idempotencyKey);
+  }
+
+  saveNotificationEvent(event: NotificationEventRecord): NotificationEventRecord {
+    const byKey =
+      event.idempotencyKey != null ? this.findNotificationEventByIdempotency(event.idempotencyKey) : undefined;
+    if (byKey) return byKey;
+    const exists = this.notificationEvents.find((e) => e.eventId === event.eventId);
+    if (exists) return exists;
+    this.notificationEvents.push(event);
+    return event;
+  }
+
+  upsertDeviceToken(userId: number, platform: string, token: string): DeviceTokenRecord {
+    const existing = this.deviceTokens.find((t) => t.token === token);
+    const now = new Date();
+    if (existing) {
+      existing.userId = userId;
+      existing.platform = platform;
+      existing.active = true;
+      existing.updatedAt = now;
+      return existing;
+    }
+    const row: DeviceTokenRecord = { token, userId, platform, active: true, updatedAt: now };
+    this.deviceTokens.push(row);
+    return row;
+  }
+
+  deactivateDeviceToken(token: string): void {
+    const row = this.deviceTokens.find((t) => t.token === token);
+    if (row) {
+      row.active = false;
+      row.updatedAt = new Date();
+    }
+  }
+
+  listDeviceTokensForUser(userId: number): DeviceTokenRecord[] {
+    return this.deviceTokens.filter((t) => t.userId === userId && t.active);
+  }
+
+  isRequestAcceptingNewCommitments(request: BloodRequestRecord): boolean {
+    if (request.matchingStopped || request.status === 'cancelled') return false;
+    if (request.deadlineAt && new Date(request.deadlineAt) < new Date()) return false;
+    if (request.received === true) return false;
+    return true;
+  }
+
+  listParticipationAuditsForRequest(requestId: number): ParticipationAuditRecord[] {
+    return this.participationAudits.filter((a) => a.requestId === requestId);
   }
 }

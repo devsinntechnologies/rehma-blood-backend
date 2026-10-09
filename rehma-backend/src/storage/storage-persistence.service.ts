@@ -102,8 +102,18 @@ export class StoragePersistenceService implements OnApplicationBootstrap, OnAppl
 
     const loaded = {} as Record<keyof StorageState, AnyRecord[]>;
     for (const spec of COLLECTIONS) {
-      const rows = (await this.dataSource.getRepository(spec.entity).find()) as AnyRecord[];
-      loaded[spec.key] = rows.map((row) => (spec.fromRow ? spec.fromRow({ ...row }) : { ...row }));
+      try {
+        const rows = (await this.dataSource.getRepository(spec.entity).find()) as AnyRecord[];
+        loaded[spec.key] = rows.map((row) => (spec.fromRow ? spec.fromRow({ ...row }) : { ...row }));
+      } catch (error) {
+        const entityName = this.dataSource.getMetadata(spec.entity).tableName;
+        this.logger.error(
+          `Failed to load table "${entityName}" (${spec.key}). ` +
+            `Run migrations/003_add_missing_columns.sql if PostgreSQL reports code 42703. ` +
+            `${error instanceof Error ? error.message : String(error)}`,
+        );
+        throw error;
+      }
     }
 
     // Rows just loaded are, by definition, what the database holds.
